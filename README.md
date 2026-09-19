@@ -55,6 +55,24 @@ but the conclusions look arbitrary without the failures that produced them, and
 a guard whose reason has been forgotten gets "simplified" away by the next
 person.
 
+## How changes land here
+
+Through a pull request, reviewed by the gate this repository implements. This
+one is under ten stars, so its reviewer is **GitHub Copilot** — the
+`copilot_code_review` ruleset is active on `main` with `review_on_push`, and
+`copilot-review-wait` reads the verdict.
+
+Stating it because it was not stated, and it was not followed: the first two
+commits here went straight to `main` with no pull request and no reviewer
+configured at all. A repository whose entire purpose is refusing to merge on an
+unverified pass merged itself twice on no verdict whatsoever. The reviewer was
+enabled afterwards, in response to being asked why there was no pull request.
+
+That is not a rule that was broken. It is a rule that was never written down,
+in the one place that should have known better than to leave it implicit — the
+same shape as every entry in the ledger, one level up: the guard was assumed to
+exist rather than checked.
+
 ## Testing a change
 
 The regression cases named in each `SKILL.md` are live public pull requests.
