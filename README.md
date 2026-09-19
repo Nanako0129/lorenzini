@@ -66,8 +66,10 @@ The reviewer is **GitHub Copilot**. A repository ruleset named
 `copilot-auto-review` holds one rule of type `copilot_code_review` with
 `review_on_push: true`, so Copilot is requested automatically when a NON-DRAFT
 pull request opens and on every push to it. The same rule carries
-`review_draft_pull_requests: false`, so a draft is not reviewed at all -- poll
-one and it can only time out. `copilot-review-wait` reads the verdict;
+`review_draft_pull_requests: false`, so a draft is not reviewed at all. The
+script refuses one up front rather than waiting: it exits immediately with
+`RESULT=ERROR` naming the draft, so there is nothing to wait for and nothing to
+misread as slowness. `copilot-review-wait` reads the verdict;
 merge on `RESULT=CLEAN`, and on anything else disposition what it printed first.
 
 Why Copilot rather than CodeRabbit: CodeRabbit's OSS tier requires a public
