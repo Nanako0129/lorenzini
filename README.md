@@ -45,9 +45,11 @@ Requires `gh` (authenticated) and `jq`.
 **Never infer a pass from absence.**
 
 A verdict requires an explicit positive completion marker. No marker means keep
-polling — not "nothing found, therefore clean". Five separate bugs have come
-from breaking this rule in five different ways, and all five failed *open*:
-they reported success. [`docs/fail-open-ledger.md`](docs/fail-open-ledger.md)
+polling — not "nothing found, therefore clean". Every bug found here so far has come from
+breaking this rule, in a different way each time, and each one failed *open*:
+it reported success. No count is given on purpose -- an earlier version of this
+sentence carried one, the ledger grew, and the two disagreed until a reviewer
+said so. [`docs/fail-open-ledger.md`](docs/fail-open-ledger.md)
 records each one, what it cost, and how it was caught.
 
 That ledger is the most valuable file here. The scripts encode its conclusions,

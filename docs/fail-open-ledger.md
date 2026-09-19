@@ -1,7 +1,7 @@
 # Fail-open ledger
 
-Every gate bug found in this repository, in order. Seven entries; entry 6 holds
-four separate defects. Every one of them failed the same direction: it reported
+Every gate bug found in this repository, in order. Entry 6 holds four separate
+defects; the rest hold one each. Every one of them failed the same direction: it reported
 **pass**, or it claimed a guard existed that did not.
 
 A gate that fails closed wastes a poll. A gate that fails open merges a defect
@@ -224,6 +224,48 @@ patterns stopped matching; it only adds one more pattern. The honest mitigation
 is the cross-check in #6 — a number the vendor maintains, disagreeing with a
 number we compute — and it needs re-finding in each new format rather than
 assuming the old spelling survived.
+
+---
+
+## 8. The same bug, one round later, because the fix added a pattern
+
+**2026-09-19, `Nanako0129/lorenzini#1`, round four.** Reported `RESULT=CLEAN` on
+a review whose body said `**Findings:** 1`.
+
+Entry #7 ended by naming what its own fix did not do: *"nothing here detects
+that the patterns stopped matching; it only adds one more pattern."* One round
+later the same body format produced findings in a place the new pattern did not
+look — no per-file table this time, and instead:
+
+```
+### 🔵 Needs a closer look
+**Findings:** 1
+Open (1)
+Previously missed (2)   <- findings in code unchanged since the last review
+```
+
+`Previously missed` is the sharpest of these: those findings can never become
+inline comments, because the lines they concern were not touched. Zero inline
+comments at head was therefore correct and meaningless at the same time.
+
+Both findings were real, and one of them was the N-places failure for the third
+time: `RESULT=TABLE` had been added to the explanatory verdict table in
+`SKILL.md` and not to the operational one lower in the same file.
+
+**Now:** the cross-check reads the vendor's own number in whatever spelling the
+format uses — `Comments generated: N`, `**Findings:** N`, `Open (N)`,
+`Previously missed (N)` — and takes the largest. Their relationship is not
+modelled, because modelling it means understanding a format that will change
+again; the maximum over-counts at worst, and over-counting withholds a pass
+while under-counting grants one.
+
+**Shape:** a fix that enumerates buckets is a fix that is already incomplete.
+The bucket list is the vendor's to change, and it does not announce changes.
+
+**The general lesson, now paid for twice:** prefer a signal the vendor maintains
+over a pattern you maintain. A number they publish about their own work moves
+when they move; a regex you wrote about their output does not, and its silence
+is indistinguishable from good news.
 
 ---
 

@@ -176,12 +176,33 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
       # code: a check that can never fire, added while fixing checks that never
       # fired. Tolerate optional emphasis and spacing, and verify against a real
       # body rather than a remembered one.
-      claimed=$(printf '%s\n' "$body" | grep -oE 'Comments generated:[*[:space:]]*[0-9]+' | grep -oE '[0-9]+' | tail -1)
+      # The vendor's own number, in whatever spelling this format uses.
+      #
+      # The older body said "- **Comments generated:** 3". The ccr-overview-v2
+      # body dropped that entirely and reports "**Findings:** N", plus named
+      # sections "Open (N)" and "Previously missed (N)" -- the latter being
+      # findings in code that has not changed since the last review, which
+      # therefore never become inline comments at all. Measured on lorenzini#1,
+      # 2026-09-19: "Findings: 1", "Open (1)", "Previously missed (2)", zero
+      # inline comments at head, two real documentation defects. Reported CLEAN.
+      #
+      # Ledger entry 7 said the honest mitigation is to re-find this number in
+      # each new format rather than add one more pattern per bucket, because a
+      # pattern that stops matching is silent and a bucket list is never
+      # complete. This is that: collect every count the body states about
+      # findings and take the largest. Their exact relationship is not modelled
+      # -- Open and Previously missed overlap here -- so the maximum is used
+      # deliberately. Over-counting withholds a pass; under-counting grants one.
+      claimed=$(printf '%s\n' "$body" \
+        | grep -oE 'Comments generated:[*[:space:]]*[0-9]+|\*\*Findings:\*\*[[:space:]]*[0-9]+|Open \(([0-9]+)\)|Previously missed \(([0-9]+)\)' \
+        | grep -oE '[0-9]+' | sort -rn | head -1)
       if [ -n "${claimed:-}" ] && [ "${claimed:-0}" -gt "${inline:-0}" ]; then
         echo
-        echo "Copilot reports $claimed comment(s) generated for this commit, but only"
-        echo "${inline:-0} were found on it. Something it posted is not being counted."
-        echo "Do not read this as clean: the gap is the finding."
+        echo "Copilot's own body reports $claimed finding(s) for this commit; ${inline:-0} were"
+        echo "found on it. Some are in sections that never become inline comments --"
+        echo "'Previously missed' covers code unchanged since the last review."
+        echo "Read the body. Do not read this as clean: the gap is the finding."
+        printf '%s\n' "$body" | sed 's/<[^>]*>//g' | grep -nE '^###|Findings:|^Open \(|^Previously missed \(|^Resolved since' | head -8
         echo "RESULT=MISCOUNT claimed=$claimed counted=${inline:-0}"
         exit 0
       fi

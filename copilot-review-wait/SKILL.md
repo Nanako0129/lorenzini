@@ -155,6 +155,8 @@ When the poller completes, read the output file. The last line is the verdict:
 | `RESULT=CLEAN` | A Copilot review of the head commit, no inline comments and no suppressed section | The review gate is met. Merge (do not merge before this). |
 | `RESULT=SUPPRESSED count=N` | Review of head, no inline comments, but N findings withheld into the body (printed above the result line) | **Not a pass.** Triage the N findings as fix / defer / reject like inline ones. Fixing any of them means a push and a fresh round. |
 | `RESULT=SUGGESTIONS count=N` | N inline comments on the head commit (printed above the result line) | Auto loop: triage → fix → reply → resolve → push → wait again, within budget. Single run: print the comments and stop. |
+| `RESULT=MISCOUNT claimed=N counted=M` | Copilot's own body reports N findings for this commit; M were found on it | **Not a pass.** The gap is the finding. Some live in sections that never become inline comments — `Previously missed` covers code unchanged since the last review. |
+| `RESULT=TABLE count=N` | The `ccr-overview-v2` body reports findings in its per-file table rather than as comments | **Not a pass.** Read the printed cells. |
 | `RESULT=TIMEOUT` | No review in time | Check the PR is not a draft, and that the review was actually requested (timeline query above). Otherwise Copilot is slow or the account lacks a plan with code review. |
 | `RESULT=ERROR ...` | Could not resolve repo/PR or `gh`/`jq` missing | Fix the precondition and retry. |
 
