@@ -45,7 +45,7 @@ All three were measured on `Nanako0129/coralline#85`, 2026-09-17. The first one 
 
 The body opens with a status line — the observed one was `### 🟡 Changes recommended` — followed by a "Pull request overview", a per-file table, and a "Review details" block carrying `Files reviewed: 4/5`, `Comments generated: 3` and `Review effort level: Lite`. Useful to read; **not** the gate, because the clean-pass wording has not been observed here and pinning unverified text would be a guard that lies.
 
-`Comments generated: N` **equals the inline comment count** (3 and 3, measured). It is a free cross-check on your filter: if the body says 3 and you counted 0, your login filter is wrong, not the PR clean.
+`Comments generated: N` **equals the inline comment count** (3 and 3, measured), and the script now compares them: a body claiming more than was counted returns `RESULT=MISCOUNT` rather than a pass. This was described here as done for two days while the code contained no such check — see entry 6 of the fail-open ledger. Note the literal is `- **Comments generated:** 3`, with the emphasis markers *between* the colon and the number; a pattern written for `Comments generated: 3` matches nothing, which is how the first attempt at this guard shipped as dead code.
 
 One part of the body has no inline counterpart: a **"Suppressed comments"** section, holding findings Copilot generated but withheld from the inline set as low-confidence. It is counted *separately* from `Comments generated` (the same review carried `Suppressed comments (1)` alongside `Comments generated: 3`, for 3 inline).
 
@@ -57,6 +57,7 @@ So **a review with a `Suppressed comments` section is never reported as CLEAN.**
 |---|---|
 | `RESULT=CLEAN` | Review of head, no inline comments, **and no suppressed section**. The gate is met. |
 | `RESULT=SUPPRESSED count=N` | Review of head, no inline comments, but N findings withheld into the body. The script prints the whole section — path, line and code. **Triage them like any other finding before merging.** |
+| `RESULT=MISCOUNT claimed=N counted=M` | Copilot's own body reports more comments than were found on the head commit. Something it posted is not being counted — a login change, a filter bug, a failed read. **The gap is the finding.** |
 
 `Files reviewed: 4/5` deserves the same glance and is not automated: Copilot skips files, and a skipped file was never reviewed, so no verdict says anything about it.
 

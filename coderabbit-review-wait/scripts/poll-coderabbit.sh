@@ -14,6 +14,8 @@
 #                                 review -- sit in a collapsed body section
 #   RESULT=PREMERGE count=N       otherwise clean, but N pre-merge checks failed
 #   RESULT=SUGGESTIONS count=N    inline comments on head, or CHANGES_REQUESTED
+#   RESULT=MISCOUNT claimed=N counted=M   the reviewer's own count exceeds ours -- the gap is the finding
+#   RESULT=UNREPLIED count=N      N resolved threads carry no human reply
 #   RESULT=TIMEOUT                no review of head in time
 #   RESULT=ERROR ...              draft PR, or could not resolve repo/PR/tools
 #
@@ -133,7 +135,14 @@ classify_bodies() {
   # them as "(1 warning)" -- the failure marker appears only in the tally
   # and the heading. A parser that looks for it inside the row finds nothing
   # and reports a pass. CodeRabbit counts a warning as failed; so do we.
-  premerge=$(printf '%s\n' "$bodies" | grep -oE 'Pre-merge checks[^|]*\|[^|]*\|[^<]*' | tail -1)
+  # Do not require a fixed number of pipes. CodeRabbit omits a zero-count field
+  # entirely: Syrtis-Windows#115 rendered an all-pass tally as
+  # "Pre-merge checks | OK 5" with no failure field at all. The symmetric case,
+  # everything failing, renders as a single-segment "Pre-merge checks | FAIL N"
+  # -- which a two-pipe pattern does not match, so total failure read as no
+  # failures. A repository with one check configured reaches that shape the
+  # first time the check fails.
+  premerge=$(printf '%s\n' "$bodies" | grep -oE 'Pre-merge checks[^<]*' | tail -1)
   failed=$(printf '%s\n' "$premerge" | grep -oE '❌[[:space:]]*[0-9]+' | grep -oE '[0-9]+' | tail -1)
   if [ -n "$premerge" ] && [ "${failed:-0}" -ge 1 ] 2>/dev/null; then
     echo
@@ -286,7 +295,29 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   esac
 
   if [ "$complete" = "1" ]; then
-    comments=$(gh api --paginate --slurp "repos/$REPO/pulls/$PR/comments?per_page=100" 2>/dev/null || printf '[]')
+    # A FAILED read is not an empty result. `|| printf '[]'` used to conflate
+    # them, so one endpoint erroring while the others succeeded produced
+    # inline=0 and a CLEAN verdict over real findings. Verified on coralline#85
+    # and TokenBar#349: with only this call failing, the scripts reported CLEAN
+    # on pull requests carrying 3 and 1 findings respectively. The twice-over
+    # confirmation below does not help -- a rate limit or 5xx persists across
+    # rounds, so both rounds fail and both read as clean.
+    #
+    # `--paginate` makes this a multi-request call, so a second page failing on
+    # a PR with more than 100 comments is ordinary, not exotic. Validate that
+    # the payload actually parses too: a partial page with '[]' appended is
+    # invalid JSON, which jq then turns back into 0 through its own `|| echo 0`.
+    if ! comments=$(gh api --paginate --slurp "repos/$REPO/pulls/$PR/comments?per_page=100" 2>/dev/null) \
+       || ! printf '%s\n' "$comments" | jq -e 'type == "array"' >/dev/null 2>&1; then
+      [ "${read_warned:-0}" = "1" ] || {
+        echo "Could not read the review-comments endpoint. Retrying rather than counting zero findings."
+        read_warned=1
+      }
+      clean_seen=0
+      sleep "$INTERVAL"
+      continue
+    fi
+    read_warned=0
     # in_reply_to_id filters out CodeRabbit's own thread replies, which live in
     # the same endpoint and are not findings. Measured on pysnmp/pysmi#328:
     # two coderabbitai[bot] comments on one line, one finding (in_reply_to null)
@@ -313,7 +344,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
     # NyanCogs#23: two silently-resolved threads, both reported here, and
     # inline=0 that round because their comments sit on an earlier commit.
     # Saying "counted" there would state something the run did not do.
-    [ "${n_silent:-0}" -ge 1 ] && echo "($n_silent resolved thread(s) have no human reply; not excused.)"
+    [ "${n_silent:-0}" -ge 1 ] && echo "($n_silent resolved thread(s) have no human reply.)"
     open_sel="$sel | select([.id] | inside(\$done) | not)"
     inline=$(printf '%s\n' "$comments" \
       | jq --argjson done "$resolved_ids" --arg h "$HEAD" --arg b "$BOT" "[$open_sel] | length" 2>/dev/null || echo 0)
@@ -357,6 +388,58 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
         echo "CodeRabbit reported on the current commit by issue comment (no review object) with no inline findings."
       fi
       classify_bodies "$bodies" && exit 0
+
+      # CROSS-CHECK THE REVIEWER'S OWN NUMBER AGAINST OURS.
+      #
+      # This was claimed as fixed in the fail-open ledger and in SKILL.md, and
+      # was never in the code. The claim outlived its truth for two days in a
+      # public repository. It is the whole reason the Copilot login bug could
+      # have recurred silently: anything that makes our count too low -- a
+      # renamed login, an over-eager in_reply_to filter, a commit-keying
+      # mismatch, a failed read -- is invisible unless something independent
+      # disagrees with it.
+      #
+      # It is also the only signal here that tracks the vendor. Every regex in
+      # this file encodes how CodeRabbit rendered its output on one day; if the
+      # format shifts, they all silently stop matching and the gate degrades
+      # into a machine that always says CLEAN. The reviewer's own count is the
+      # one thing that moves when the vendor moves, so a disagreement surfaces
+      # the drift instead of hiding it.
+      #
+      # N counts the findings that round. Ours are the unresolved ones at head
+      # (inline) plus the dispositioned ones at head (n_done). N larger than
+      # that sum means we did not see something it posted.
+      # Literal measured on pilotfish#85: "**Actionable comments posted: 1**",
+      # colon and number both inside the emphasis. Matched here with the same
+      # tolerance as the Copilot script anyway, because the difference between
+      # the two vendors' spellings is exactly the kind of detail that is true
+      # until it is not.
+      claimed=$(printf '%s\n' "$bodies" | grep -oE 'Actionable comments posted:[*[:space:]]*[0-9]+' | grep -oE '[0-9]+' | sort -rn | head -1)
+      if [ -n "${claimed:-}" ] && [ "${claimed:-0}" -gt $(( ${inline:-0} + ${n_done:-0} )) ]; then
+        echo
+        echo "CodeRabbit reports $claimed actionable comment(s) for this commit, but only"
+        echo "$(( ${inline:-0} + ${n_done:-0} )) were found on it ($inline open, $n_done dispositioned)."
+        echo "Something it posted is not being counted. Do not read this as clean:"
+        echo "the gap is the finding."
+        echo "RESULT=MISCOUNT claimed=$claimed counted=$(( ${inline:-0} + ${n_done:-0} ))"
+        exit 0
+      fi
+
+      # A thread closed by "@coderabbitai resolve" with nobody saying anything
+      # is an absence, and this gate never infers a pass from absence. The
+      # earlier fix moved these out of the EXCUSED set but never put them into a
+      # BLOCKING one, so the notice printed and the run passed anyway. Verified
+      # on TokenBar#349: it withheld CLEAN only because a pre-merge check
+      # happened to fail as well; with that varied away, a silently-resolved
+      # finding passed.
+      if [ "${n_silent:-0}" -ge 1 ]; then
+        echo
+        echo "$n_silent resolved thread(s) carry no human reply, so nothing records a"
+        echo "decision about them. Reply to each with its disposition, then resolve."
+        echo "RESULT=UNREPLIED count=$n_silent"
+        exit 0
+      fi
+
       echo "RESULT=CLEAN"
       exit 0
     fi

@@ -1,7 +1,8 @@
 # Fail-open ledger
 
-Every gate bug found in this repository, in order. All five failed the same
-direction: they reported **pass**.
+Every gate bug found in this repository, in order. Six entries; entry 6 holds
+four separate defects. Every one of them failed the same direction: it reported
+**pass**, or it claimed a guard existed that did not.
 
 A gate that fails closed wastes a poll. A gate that fails open merges a defect
 and tells you it was fine. Only one of those is recoverable, which is why the
@@ -25,9 +26,17 @@ zero of them, on every pull request, every time.
 **Shape:** a filter that matches nothing is indistinguishable from a clean
 result. Both produce an empty set.
 
-**Now:** both logins are matched explicitly, and `Comments generated: N` in the
-body is used as a free cross-check — if the body says 3 and you counted 0, the
-filter is wrong, not the pull request clean.
+**Now:** both logins are matched explicitly, and the reviewer's own count is
+compared against ours — if the body says 3 and we counted 0, the filter is
+wrong, not the pull request clean.
+
+> **This entry was false for two days.** The cross-check was described here and
+> in `SKILL.md` as done, and was not in the code. It was added on 2026-09-19
+> after entry #6 found the claim, and its first implementation was dead code:
+> the literal is `**Comments generated:** 3`, with the emphasis markers between
+> the colon and the number, so a pattern for `Comments generated: 3` matched
+> nothing. A guard that cannot fire, written while fixing guards that did not
+> fire. Both are corrected; see #6.
 
 ---
 
@@ -124,6 +133,46 @@ existing is not a review having happened.
 
 **Now:** a review counts as a verdict only when it *says* something — `APPROVED`
 state, or a body carrying a verdict phrase. State and body are read together.
+
+---
+
+## 6. The ledger itself: three gates that were never in the code
+
+**2026-09-19.** Found by an independent fresh-context agent asked one question:
+*find a sixth failure mode this ledger does not contain*. It returned REFUTED on
+the claim that the gate fails closed, with four reproductions: three code paths
+that reported a pass, and this file claiming a guard that was not there.
+
+**The one that matters most is this file.** Entry #1 above claimed the reviewer's
+own count was used as a cross-check. `grep -c "Comments generated"
+copilot-review-wait/scripts/poll-copilot.sh` returned **0**. The claim lived in
+the ledger, in `SKILL.md`, and nowhere else. It shipped to a public repository
+and stayed true-looking for two days.
+
+That is the "contract stated in N places" failure with the worst possible
+occupant: the place that records what was already fixed. Every other entry here
+is trustworthy only to the degree this one was, and it was not.
+
+The other three, each reproduced against real payloads with one input varied:
+
+| | What | Direction |
+|---|---|---|
+| **F1** | `comments=$(gh api ... \|\| printf '[]')` — one endpoint failing while the others succeed gives `inline=0`. Reproduced: `CLEAN` on `coralline#85` (3 findings) and `TokenBar#349` (1 finding). `--paginate` makes a second-page failure ordinary, not exotic. | **open** |
+| **F3** | A resolved thread with no human reply was moved out of the *excused* set by entry #4 but never into a *blocking* one. The notice printed; the run passed. `TokenBar#349` withheld `CLEAN` only because a pre-merge check happened to fail too; varying that away, the silently-resolved finding passed. | **open** |
+| **F4** | The pre-merge tally pattern required two pipes. CodeRabbit omits a zero-count field, so an all-failing tally renders as one segment and matched nothing — total failure read as no failures. | **open** |
+
+**Now:** reads that fail are distinguished from reads that return nothing (retry,
+never count zero); `MISCOUNT` withholds the pass when the reviewer's number
+exceeds ours; `UNREPLIED` withholds it when a thread was closed with nobody
+saying anything; the tally pattern no longer assumes a field count.
+
+**Shape:** a fix believed to be in place is worse than a known gap. A known gap
+gets watched.
+
+**What it says about the other entries:** none of them were verified by their
+author after being written. The three that were real had been caught by someone
+else hitting them. The one that was fiction survived because nobody re-read the
+code it described — including, twice, the person who wrote both.
 
 ---
 

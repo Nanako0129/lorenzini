@@ -179,6 +179,8 @@ Use `run_in_background: true`. Keep the working directory in the target repo, or
 | `RESULT=CLEAN` | A review at head, no inline findings, no collapsed section, no `CHANGES_REQUESTED` | Gate met. Merge. |
 | `RESULT=NITPICKS count=N` | Otherwise clean, but a collapsed body section holds N findings — or N files that were skipped from review (printed above) | **Not a pass.** Triage them, then push and re-poll. A skipped file is a coverage gap: read it yourself or re-request a review of it. |
 | `RESULT=PREMERGE count=N` | Otherwise clean, but N pre-merge checks failed (printed above). A body carrying both a collapsed section and a failed check prints both blocks and reports `NITPICKS` | **Not a pass.** Disposition each; a failed check is often a legitimate Defer. |
+| `RESULT=MISCOUNT claimed=N counted=M` | CodeRabbit's body reports N actionable comments for this commit; only M were found on it | **Not a pass.** Something it posted is not being counted. The gap is the finding — and this is the one signal here that moves when the vendor changes its output format, which every regex in the script silently will not. |
+| `RESULT=UNREPLIED count=N` | N resolved threads carry no human reply, so nothing records a decision about them | **Not a pass.** Reply with the disposition, then resolve. A thread closed silently is an absence, and this gate never infers a pass from absence. |
 | `RESULT=SUGGESTIONS count=N` | N inline findings at head, or `CHANGES_REQUESTED` | Triage → fix → reply → resolve → push → poll again, within budget. |
 | `RESULT=TIMEOUT` | No review of head in time | Check the PR is not a draft and that CodeRabbit is installed on the repo. |
 | `RESULT=ERROR ...` | Draft PR, or could not resolve repo/PR/tools | Fix the precondition and retry. |

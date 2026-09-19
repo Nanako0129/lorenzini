@@ -18,6 +18,7 @@
 # Output (last line is machine-readable):
 #   RESULT=CLEAN                  Copilot reviewed HEAD and left no inline comments → gate met, may merge
 #   RESULT=SUGGESTIONS count=N    Copilot left N inline comments on HEAD (listed above) → fix, push, re-run
+#   RESULT=MISCOUNT claimed=N counted=M   Copilot's body reports more comments than were found
 #   RESULT=TIMEOUT                no review in time (Copilot slow, out of quota, or not enabled for this account)
 #   RESULT=ERROR ...              draft PR, or could not resolve repo/PR/tools
 #
@@ -92,11 +93,28 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   reviewed=$(printf '%s\n' "$reviews" \
     | jq --arg h "$HEAD" --arg b "$BOT" '[.[][] | select(.user.login == $b and .commit_id == $h)] | length' 2>/dev/null || echo 0)
   if [ "${reviewed:-0}" -ge 1 ]; then
-    comments=$(gh api --paginate --slurp "repos/$REPO/pulls/$PR/comments?per_page=100" 2>/dev/null || printf '[]')
+    # A FAILED read is not an empty result. Verified on coralline#85: with only
+    # this call failing and the reviews endpoint succeeding, the script reported
+    # CLEAN on a review carrying three findings. The twice-over confirmation
+    # below does not help, because a rate limit or 5xx persists across rounds.
+    if ! comments=$(gh api --paginate --slurp "repos/$REPO/pulls/$PR/comments?per_page=100" 2>/dev/null) \
+       || ! printf '%s\n' "$comments" | jq -e 'type == "array"' >/dev/null 2>&1; then
+      [ "${read_warned:-0}" = "1" ] || {
+        echo "Could not read the review-comments endpoint. Retrying rather than counting zero findings."
+        read_warned=1
+      }
+      clean_seen=0
+      sleep "$INTERVAL"
+      continue
+    fi
+    read_warned=0
     # Measured on coralline#85: this endpoint populates .line, but the
     # reviews/{id}/comments endpoint returns it as null with only a diff
     # `position`. The fallback below keeps the display right either way.
-    sel='.[][] | select((.user.login == $b or .user.login == $c) and .original_commit_id == $h)'
+    # in_reply_to_id excludes Copilot's own thread replies, which are not
+    # findings. Counting them only over-counts (fail closed), but it inflates
+    # every later round, so an auto loop would not converge.
+    sel='.[][] | select((.user.login == $b or .user.login == $c) and .original_commit_id == $h and .in_reply_to_id == null)'
     inline=$(printf '%s\n' "$comments" \
       | jq --arg h "$HEAD" --arg b "$BOT" --arg c "$CBOT" "[$sel] | length" 2>/dev/null || echo 0)
     if [ "${inline:-0}" -ge 1 ]; then
@@ -137,6 +155,47 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
         echo "RESULT=SUPPRESSED count=${n:-unknown}"
         exit 0
       fi
+
+      # CROSS-CHECK COPILOT'S OWN NUMBER AGAINST OURS.
+      #
+      # The fail-open ledger and SKILL.md both stated this was already done --
+      # "if the body says 3 and you counted 0, the filter is wrong, not the pull
+      # request clean" -- and it was never in this file. The claim shipped to a
+      # public repository and outlived its truth. It exists now.
+      #
+      # It is the guard against the ledger's own entry #1 recurring: Copilot
+      # renamed nothing, but it authors its review and its inline comments under
+      # two different logins, and a filter matching neither produces the same
+      # empty set as a clean pull request. Only an independent number can tell
+      # those apart. It is also the one signal that moves when the vendor
+      # changes its output format, which every regex here silently will not.
+      # The literal is "- **Comments generated:** 3" -- the emphasis markers sit
+      # BETWEEN the colon and the number, so 'Comments generated: [0-9]+' matches
+      # nothing. The first version of this guard used exactly that and was dead
+      # code: a check that can never fire, added while fixing checks that never
+      # fired. Tolerate optional emphasis and spacing, and verify against a real
+      # body rather than a remembered one.
+      claimed=$(printf '%s\n' "$body" | grep -oE 'Comments generated:[*[:space:]]*[0-9]+' | grep -oE '[0-9]+' | tail -1)
+      if [ -n "${claimed:-}" ] && [ "${claimed:-0}" -gt "${inline:-0}" ]; then
+        echo
+        echo "Copilot reports $claimed comment(s) generated for this commit, but only"
+        echo "${inline:-0} were found on it. Something it posted is not being counted."
+        echo "Do not read this as clean: the gap is the finding."
+        echo "RESULT=MISCOUNT claimed=$claimed counted=${inline:-0}"
+        exit 0
+      fi
+
+      # Copilot is documented never to submit CHANGES_REQUESTED, and none has
+      # been observed. If that ever changes, a zero-comment CHANGES_REQUESTED
+      # would otherwise read as clean. One line, fails closed.
+      changes=$(printf '%s\n' "$reviews" | jq --arg h "$HEAD" --arg b "$BOT" \
+        '[.[][] | select(.user.login == $b and .commit_id == $h and .state == "CHANGES_REQUESTED")] | length' 2>/dev/null || echo 0)
+      if [ "${changes:-0}" -ge 1 ]; then
+        echo "Copilot submitted CHANGES_REQUESTED on this commit with no inline comments."
+        echo "RESULT=SUGGESTIONS count=0"
+        exit 0
+      fi
+
       echo "RESULT=CLEAN"
       exit 0
     fi
