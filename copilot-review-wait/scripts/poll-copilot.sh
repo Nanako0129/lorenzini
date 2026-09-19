@@ -226,6 +226,13 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
       # per-file table is the bucket. Read the last column of each data row; a
       # cell that is not empty and not a literal none/dash is a finding Copilot
       # is reporting somewhere other than the count.
+      # Bounds are <= NF, not < NF. A Markdown table may omit the trailing pipe,
+      # which drops awk's empty final field: the Findings header then sits at
+      # i == NF and a `< NF` scan never finds it, so every data row is skipped
+      # and the gate reports clean. Copilot's current tables do carry the
+      # trailing pipe, which is why this passed its own tests -- a latent
+      # fail-open waiting for one character of formatting to change.
+      #
       # Locate the Findings column by its HEADER, never by position. The older
       # body format also has a per-file table, but it is "| File | Description |"
       # -- reading its last column as findings reported Syrtis-Agent#4, a clean
@@ -234,14 +241,14 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
       table_findings=$(printf '%s\n' "$body" | awk -F'|' '
         /^\|/ {
           if (col == 0) {
-            for (i = 2; i < NF; i++) {
+            for (i = 2; i <= NF; i++) {
               h = $i; gsub(/^[ \t]+|[ \t]+$/, "", h)
               if (tolower(h) == "findings") { col = i }
             }
             next
           }
           if ($0 ~ /^\|[ \t]*:?-+:?[ \t]*\|/) next
-          if (col > 0 && col < NF) {
+          if (col > 0 && col <= NF) {
             c = $col; gsub(/^[ \t]+|[ \t]+$/, "", c)
             lc = tolower(c)
             if (c != "" && lc != "none" && lc != "-" && lc != "n/a" && lc != "—") print c

@@ -262,6 +262,21 @@ while under-counting grants one.
 **Shape:** a fix that enumerates buckets is a fix that is already incomplete.
 The bucket list is the vendor's to change, and it does not announce changes.
 
+**Round five found the fix's own latent bug.** The awk that locates the Findings
+column bounded its scan with `< NF` instead of `<= NF`. A Markdown table may omit
+the trailing pipe, which drops awk's empty final field; the Findings header then
+sits at `i == NF`, is never found, and every data row is skipped. Copilot's
+current tables do carry the trailing pipe, which is exactly why this passed the
+tests written for it — a fail-open held back by one character of someone else's
+formatting.
+
+That is three self-inflicted findings across five rounds, in three consecutive
+rounds. Not a majority, so the loop is still converging rather than diverging,
+but the trend is the thing to watch: the findings are no longer about the
+original work, they are about the fixes. The rule from the divergence section
+applies at the next one — if round six also finds a defect introduced by round
+five, stop point-fixing and take the whole file structurally instead.
+
 **The general lesson, now paid for twice:** prefer a signal the vendor maintains
 over a pattern you maintain. A number they publish about their own work moves
 when they move; a regex you wrote about their output does not, and its silence
