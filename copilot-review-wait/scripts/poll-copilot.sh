@@ -19,7 +19,7 @@
 #   RESULT=CLEAN                  Copilot reviewed HEAD and left no inline comments → gate met, may merge
 #   RESULT=SUGGESTIONS count=N    Copilot left N inline comments on HEAD (listed above) → fix, push, re-run
 #   RESULT=MISCOUNT claimed=N counted=M   Copilot's body reports more comments than were found
-#   RESULT=TABLE count=N          findings reported in the per-file table, not as comments
+#   RESULT=UNREAD format=X        a review format with no known clean shape -- a human must read it
 #   RESULT=TIMEOUT                no review in time (Copilot slow, out of quota, or not enabled for this account)
 #   RESULT=ERROR ...              draft PR, or could not resolve repo/PR/tools
 #
@@ -226,44 +226,42 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
       # per-file table is the bucket. Read the last column of each data row; a
       # cell that is not empty and not a literal none/dash is a finding Copilot
       # is reporting somewhere other than the count.
-      # Bounds are <= NF, not < NF. A Markdown table may omit the trailing pipe,
-      # which drops awk's empty final field: the Findings header then sits at
-      # i == NF and a `< NF` scan never finds it, so every data row is skipped
-      # and the gate reports clean. Copilot's current tables do carry the
-      # trailing pipe, which is why this passed its own tests -- a latent
-      # fail-open waiting for one character of formatting to change.
+      # NEW BODY FORMAT: THIS GATE DOES NOT KNOW WHAT CLEAN LOOKS LIKE.
       #
-      # Locate the Findings column by its HEADER, never by position. The older
-      # body format also has a per-file table, but it is "| File | Description |"
-      # -- reading its last column as findings reported Syrtis-Agent#4, a clean
-      # PR, as having one. Fail-closed, but wrong, and a gate that cries wolf on
-      # clean runs gets ignored or edited away.
-      table_findings=$(printf '%s\n' "$body" | awk -F'|' '
-        /^\|/ {
-          if (col == 0) {
-            for (i = 2; i <= NF; i++) {
-              h = $i; gsub(/^[ \t]+|[ \t]+$/, "", h)
-              if (tolower(h) == "findings") { col = i }
-            }
-            next
-          }
-          if ($0 ~ /^\|[ \t]*:?-+:?[ \t]*\|/) next
-          if (col > 0 && col <= NF) {
-            c = $col; gsub(/^[ \t]+|[ \t]+$/, "", c)
-            lc = tolower(c)
-            if (c != "" && lc != "none" && lc != "-" && lc != "n/a" && lc != "—") print c
-          }
-        }')
-      if [ -n "$table_findings" ]; then
-        echo
-        echo "Copilot reported findings in its per-file table rather than as inline"
-        echo "comments. They do not move the comment count:"
-        echo "------------------------------------------------------------"
-        printf '%s\n' "$table_findings"
-        echo "------------------------------------------------------------"
-        echo "RESULT=TABLE count=$(printf '%s\n' "$table_findings" | wc -l | tr -d ' ')"
-        exit 0
-      fi
+      # Three rounds were spent patching a hand-rolled Markdown table parser for
+      # the ccr-overview-v2 body -- wrong column, `< NF` instead of `<= NF`,
+      # then a missing leading pipe -- each round finding a defect the previous
+      # round introduced. That is the divergence signature: findings clustering
+      # in one function rather than spread across the work.
+      #
+      # The reason it kept failing is that it was the wrong question. Across
+      # five captured new-format bodies, EVERY one carries "Needs a closer look"
+      # and a substantive one-line summary under it, and not one of them is a
+      # confirmed clean review. Syrtis-Agent#4 was reported CLEAN by this script
+      # while its summary read "The configuration will not automatically
+      # re-enable CodeRabbit reviews after the repository reaches ten stars" --
+      # a real observation, with Findings: None and no inline comments.
+      #
+      # So there is no clean sample of this format to recognise, and inventing a
+      # pattern for one would be a guard asserting something never measured.
+      # The honest behaviour is to refuse the pass and hand the body to a human,
+      # which is what this gate does everywhere else when it cannot tell.
+      #
+      # Delete this branch once a genuinely clean new-format review has been
+      # captured and its shape is known -- not before.
+      case "$body" in
+        *ccr-overview-v2*|*"Copilot review overview"*)
+          echo
+          echo "This is Copilot's newer review format, and no clean example of it has"
+          echo "been observed. Every captured sample carries a substantive summary"
+          echo "line with Findings: None and no inline comments, so an empty count"
+          echo "here means nothing. Read the review:"
+          echo "------------------------------------------------------------"
+          printf '%s\n' "$body" | sed 's/<[^>]*>//g' | grep -vE '^[[:space:]]*$' | head -14
+          echo "------------------------------------------------------------"
+          echo "RESULT=UNREAD format=ccr-overview-v2"
+          exit 0 ;;
+      esac
 
       # Copilot is documented never to submit CHANGES_REQUESTED, and none has
       # been observed. If that ever changes, a zero-comment CHANGES_REQUESTED

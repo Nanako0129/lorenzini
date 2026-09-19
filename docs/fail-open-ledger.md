@@ -1,7 +1,8 @@
 # Fail-open ledger
 
-Every gate bug found in this repository, in order. Entry 6 holds four separate
-defects; the rest hold one each. Every one of them failed the same direction: it reported
+Every gate bug found in this repository, in order. Several entries hold more
+than one defect; no count is kept, because the last two attempts at one went
+stale within a day and a reviewer caught both. Every one of them failed the same direction: it reported
 **pass**, or it claimed a guard existed that did not.
 
 A gate that fails closed wastes a poll. A gate that fails open merges a defect
@@ -281,6 +282,48 @@ five, stop point-fixing and take the whole file structurally instead.
 over a pattern you maintain. A number they publish about their own work moves
 when they move; a regex you wrote about their output does not, and its silence
 is indistinguishable from good news.
+
+---
+
+## 9. Three rounds patching a parser, when the question was wrong
+
+**2026-09-19, `Nanako0129/lorenzini#1`, rounds four to six.** The stop condition
+written in entry 8 fired: round six found a defect introduced by round five,
+which had found one introduced by round four.
+
+All three were in the same hand-rolled Markdown table parser added to read the
+`ccr-overview-v2` body: the wrong column, then `< NF` where the trailing pipe is
+optional, then a leading pipe assumed to be present. Findings clustering in one
+function rather than spread across the work — the divergence signature, and it
+took being written down in advance to be acted on rather than argued with.
+
+**The parser was answering the wrong question.** Across five captured
+new-format bodies, every single one carries `### 🔵 Needs a closer look` and a
+substantive one-line summary, and **not one is a confirmed clean review**. There
+was no clean shape to recognise. Each round added a pattern for where findings
+had appeared last time, which is a list the vendor owns and does not announce
+changes to.
+
+`Syrtis-Agent#4` makes the cost concrete. This script reported it `CLEAN`, and
+that verdict was relayed to the user as one of five clean pull requests ready to
+merge. Its summary line read: *"The configuration will not automatically
+re-enable CodeRabbit reviews after the repository reaches ten stars."* A real
+observation, with `Findings: None`, no per-file Findings column, and zero inline
+comments. Three of those five carried substantive comments; the report said all
+five were clean.
+
+**Now:** the parser is deleted. A body in this format returns `RESULT=UNREAD`
+and prints the review for a person to read. Not a pass, not a failure — an
+admission. The branch carries an explicit condition for its own removal: once a
+genuinely clean new-format review has been captured and its shape is known.
+
+**Shape:** patching the place a finding appeared is a fix for the last one. When
+three rounds each fix the previous round's fix, the defect is not in the code
+being patched, it is in what the code is trying to decide.
+
+**The subtraction:** the ledger already said it, two entries before this one —
+*a redundant check that can be false is a second failure mode, not a second line
+of defence.* The clean round arrived by deleting the check, not by fixing it.
 
 ---
 
