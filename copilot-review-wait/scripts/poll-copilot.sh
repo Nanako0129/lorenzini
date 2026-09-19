@@ -19,6 +19,7 @@
 #   RESULT=CLEAN                  Copilot reviewed HEAD and left no inline comments → gate met, may merge
 #   RESULT=SUGGESTIONS count=N    Copilot left N inline comments on HEAD (listed above) → fix, push, re-run
 #   RESULT=MISCOUNT claimed=N counted=M   Copilot's body reports more comments than were found
+#   RESULT=TABLE count=N          findings reported in the per-file table, not as comments
 #   RESULT=TIMEOUT                no review in time (Copilot slow, out of quota, or not enabled for this account)
 #   RESULT=ERROR ...              draft PR, or could not resolve repo/PR/tools
 #
@@ -182,6 +183,57 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
         echo "${inline:-0} were found on it. Something it posted is not being counted."
         echo "Do not read this as clean: the gap is the finding."
         echo "RESULT=MISCOUNT claimed=$claimed counted=${inline:-0}"
+        exit 0
+      fi
+
+      # THE NEW BODY FORMAT PARKS FINDINGS IN A TABLE CELL.
+      #
+      # Measured on lorenzini#1, 2026-09-19. Copilot changed its review body
+      # (marker "ccr-overview-v2") and every string the older checks keyed on
+      # disappeared in the same stroke: "Comments generated", "Suppressed
+      # comments" and "Files reviewed" all went to zero occurrences. The gate
+      # did not error -- it reported CLEAN on a review whose per-file table read
+      # "Two moderate issues ... Two nits ...", with the summary line saying
+      # "Needs a closer look" and "Findings: None" alongside it.
+      #
+      # This is the vendor-drift failure an independent review predicted the day
+      # before: every pattern here encodes one day's rendering, and when the
+      # rendering moves they stop matching silently and the gate degrades into a
+      # machine that always says CLEAN.
+      #
+      # "Findings: None" counts INLINE findings, as the old count did. The
+      # per-file table is the bucket. Read the last column of each data row; a
+      # cell that is not empty and not a literal none/dash is a finding Copilot
+      # is reporting somewhere other than the count.
+      # Locate the Findings column by its HEADER, never by position. The older
+      # body format also has a per-file table, but it is "| File | Description |"
+      # -- reading its last column as findings reported Syrtis-Agent#4, a clean
+      # PR, as having one. Fail-closed, but wrong, and a gate that cries wolf on
+      # clean runs gets ignored or edited away.
+      table_findings=$(printf '%s\n' "$body" | awk -F'|' '
+        /^\|/ {
+          if (col == 0) {
+            for (i = 2; i < NF; i++) {
+              h = $i; gsub(/^[ \t]+|[ \t]+$/, "", h)
+              if (tolower(h) == "findings") { col = i }
+            }
+            next
+          }
+          if ($0 ~ /^\|[ \t]*:?-+:?[ \t]*\|/) next
+          if (col > 0 && col < NF) {
+            c = $col; gsub(/^[ \t]+|[ \t]+$/, "", c)
+            lc = tolower(c)
+            if (c != "" && lc != "none" && lc != "-" && lc != "n/a" && lc != "—") print c
+          }
+        }')
+      if [ -n "$table_findings" ]; then
+        echo
+        echo "Copilot reported findings in its per-file table rather than as inline"
+        echo "comments. They do not move the comment count:"
+        echo "------------------------------------------------------------"
+        printf '%s\n' "$table_findings"
+        echo "------------------------------------------------------------"
+        echo "RESULT=TABLE count=$(printf '%s\n' "$table_findings" | wc -l | tr -d ' ')"
         exit 0
       fi
 

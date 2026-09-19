@@ -1,6 +1,6 @@
 # Fail-open ledger
 
-Every gate bug found in this repository, in order. Six entries; entry 6 holds
+Every gate bug found in this repository, in order. Seven entries; entry 6 holds
 four separate defects. Every one of them failed the same direction: it reported
 **pass**, or it claimed a guard existed that did not.
 
@@ -173,6 +173,57 @@ gets watched.
 author after being written. The three that were real had been caught by someone
 else hitting them. The one that was fiction survived because nobody re-read the
 code it described — including, twice, the person who wrote both.
+
+---
+
+## 7. Copilot changed its body format, and the gate did not notice
+
+**2026-09-19, `Nanako0129/lorenzini#1`.** Reported `RESULT=CLEAN` on a review
+that said *"Needs a closer look"* and listed four issues.
+
+Copilot shipped a new review body (marker `ccr-overview-v2`). Every string the
+Copilot gate keyed on vanished in the same stroke:
+
+| Pattern | Occurrences in the new body |
+|---|---|
+| `Comments generated` | 0 |
+| `Suppressed comments` | 0 |
+| `Files reviewed` | 0 |
+
+Nothing errored. The suppressed-findings gate from entry #2 and the miscount
+cross-check added hours earlier in entry #6 both silently stopped applying, and
+the verdict fell through to `CLEAN`.
+
+The findings were in a per-file table cell:
+
+> `README.md` | ... | **Two moderate issues: enforcement requirements and the
+> `RESULT=CLEAN` condition are unclear. Two nits: the star-threshold wording and
+> ruleset terminology are technically inaccurate.**
+
+alongside `**Findings:** None`, which counts inline findings just as the old
+count did.
+
+**This was predicted.** The independent review recorded in entry #6 closed with
+exactly this: every pattern in these scripts encodes one day's rendering, and
+when the rendering moves they stop matching with no error and the gate degrades
+into a machine that always says `CLEAN`. It named the reviewer's own count as
+the only signal that moves when the vendor moves. That count is what disappeared.
+
+**Shape:** a pattern that no longer matches is indistinguishable from a finding
+that is not there. The fifth variation of the same empty set.
+
+**Now:** `RESULT=TABLE` withholds the pass when the per-file table reports
+anything. The Findings column is located by its **header**, not by position —
+the older format's table is `| File | Description |`, and reading its last
+column as findings reported a clean pull request as having one. A gate that
+cries wolf on clean runs gets edited away, so a fail-closed bug is not free
+either.
+
+**What it does not fix:** the next format change. Nothing here detects that the
+patterns stopped matching; it only adds one more pattern. The honest mitigation
+is the cross-check in #6 — a number the vendor maintains, disagreeing with a
+number we compute — and it needs re-finding in each new format rather than
+assuming the old spelling survived.
 
 ---
 

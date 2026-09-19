@@ -57,21 +57,33 @@ person.
 
 ## How changes land here
 
-Through a pull request, reviewed by the gate this repository implements. This
-one is under ten stars, so its reviewer is **GitHub Copilot** — the
-`copilot_code_review` ruleset is active on `main` with `review_on_push`, and
-`copilot-review-wait` reads the verdict.
+Through a pull request. Nothing enforces that — `main` carries no branch
+protection and no required review, so a pull request here can be merged with any
+verdict or none. The gate is a decision, not a mechanism, which is the same
+arrangement every repository this reviews uses.
 
-Stating it because it was not stated, and it was not followed: the first two
-commits here went straight to `main` with no pull request and no reviewer
-configured at all. A repository whose entire purpose is refusing to merge on an
-unverified pass merged itself twice on no verdict whatsoever. The reviewer was
-enabled afterwards, in response to being asked why there was no pull request.
+The reviewer is **GitHub Copilot**. A repository ruleset named
+`copilot-auto-review` holds one rule of type `copilot_code_review` with
+`review_on_push: true`, so Copilot is requested automatically when a pull
+request opens and on every push to it. `copilot-review-wait` reads the verdict;
+merge on `RESULT=CLEAN`, and on anything else disposition what it printed first.
 
-That is not a rule that was broken. It is a rule that was never written down,
-in the one place that should have known better than to leave it implicit — the
-same shape as every entry in the ledger, one level up: the guard was assumed to
-exist rather than checked.
+Why Copilot rather than CodeRabbit: CodeRabbit's OSS tier requires a public
+repository with fewer than ten stars to have its reviews triggered by hand, and
+this one is under that line. The threshold is that vendor's constraint, not a
+rule about which reviewer suits which repository.
+
+Stating all of this because it was not stated, and it was not followed: the
+first two commits here went straight to `main` with no pull request and no
+reviewer configured at all. A repository whose entire purpose is refusing to
+merge on an unverified pass merged itself twice on no verdict whatsoever. The
+ruleset was created afterwards, in response to being asked why there was no pull
+request.
+
+That is not a rule that was broken. It is a rule that was never written down, in
+the one place that should have known better than to leave it implicit — the same
+shape as every entry in the ledger, one level up: the guard was assumed to exist
+rather than checked.
 
 ## Testing a change
 
