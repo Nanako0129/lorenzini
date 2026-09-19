@@ -229,10 +229,15 @@ assuming the old spelling survived.
 
 ## What the pattern is
 
-Four of the five are the same sentence with different nouns: **an empty set was
-read as a clean result.** Empty because the filter was wrong (#1), because the
+Most of them are the same sentence with different nouns: **an empty set was read
+as a clean result.** Empty because the filter was wrong (#1), because the
 findings were somewhere else (#2, #4), because the work had not finished yet
-(#3, #5).
+(#3, #5), because a read failed rather than returning nothing (#6), or because
+the vendor changed its wording and every pattern stopped matching at once (#7).
+
+Do not keep a tally here. An earlier version of this paragraph said "four of the
+five" and went stale the moment #6 and #7 were added -- and it was a reviewer,
+not its author, that noticed. A count is one more contract with a second home.
 
 The defence is not vigilance. It is that the default answer to "I found nothing"
 is *keep looking*, and only an explicit statement of completion ends the wait.

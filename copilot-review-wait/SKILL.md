@@ -58,6 +58,7 @@ So **a review with a `Suppressed comments` section is never reported as CLEAN.**
 | `RESULT=CLEAN` | Review of head, no inline comments, **and no suppressed section**. The gate is met. |
 | `RESULT=SUPPRESSED count=N` | Review of head, no inline comments, but N findings withheld into the body. The script prints the whole section — path, line and code. **Triage them like any other finding before merging.** |
 | `RESULT=MISCOUNT claimed=N counted=M` | Copilot's own body reports more comments than were found on the head commit. Something it posted is not being counted — a login change, a filter bug, a failed read. **The gap is the finding.** |
+| `RESULT=TABLE count=N` | Copilot's newer body format (`ccr-overview-v2`) reports findings in a per-file table rather than as inline comments, alongside a `Findings: None` that counts only the inline ones. **Not a pass.** Read the printed cells. |
 
 `Files reviewed: 4/5` deserves the same glance and is not automated: Copilot skips files, and a skipped file was never reviewed, so no verdict says anything about it.
 
