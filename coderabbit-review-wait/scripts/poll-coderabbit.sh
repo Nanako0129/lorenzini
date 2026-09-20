@@ -16,6 +16,8 @@
 #   RESULT=SUGGESTIONS count=N    inline comments on head, or CHANGES_REQUESTED
 #   RESULT=MISCOUNT claimed=N counted=M   the reviewer's own count exceeds ours -- the gap is the finding
 #   RESULT=UNREPLIED count=N      N resolved threads carry no human reply
+#   RESULT=OTHERBOT count=N       CodeRabbit is clean, but N undispositioned findings on this PR
+#                                 belong to a reviewer this gate does not read
 #   RESULT=TIMEOUT                no review of head in time
 #   RESULT=ERROR ...              draft PR, or could not resolve repo/PR/tools
 #
@@ -81,6 +83,43 @@ HIDDEN_RE='(Nitpick comments|Outside diff range comments|Duplicate comments|File
 # An author that is absent, null, or any actor type other than User is NOT
 # human, so an unreadable thread is counted rather than excused.
 HUMAN_JQ='def human: (.author.__typename // "") == "User";'
+
+# THE REVIEWER THIS GATE DOES NOT OWN.
+#
+# Measured on Nanako0129/lorenzini#2, 2026-09-20. lorenzini is 13 stars, so the
+# gate run on its own pull requests is this one, which filters review comments
+# to coderabbitai[bot]. Copilot reviews the repository as well. Three Copilot
+# findings at commit 058c1d9 were invisible to every verdict the branch produced
+# -- they sat through a NITPICKS and a SUGGESTIONS verdict and the next round
+# would have reported CLEAN over them. Two were real defects no CodeRabbit round
+# raised. They were found by listing the review threads by hand.
+#
+# The routing is not the bug. All five under-ten-star repositories carry
+# CodeRabbit's own "Auto reviews are disabled on this repository" notice, so the
+# split is in force. What the split cannot prevent is a hand or checkbox trigger
+# putting the non-routed reviewer on any pull request, leaving no trace the
+# routed poller reads. NyanCogs#29 is the other demonstration: auto review
+# disabled, CodeRabbit triggered anyway, three rounds and eight inline findings,
+# three of them on lines Copilot's first round never touched.
+#
+# So a login filter cannot tell "the other reviewer found nothing" from "I never
+# looked at the other reviewer". Same sentence as the Copilot two-login bug,
+# except that filter was WRONG and this one is merely INCOMPLETE -- which is
+# worse, because nothing about it looks broken.
+#
+# This does not classify the other bot's findings; it refuses to grant CLEAN
+# while any are undispositioned, and says whose they are. Parsing a second
+# vendor's body format here would be a second gate living inside this one.
+# Resolved-with-a-human-reply counts as dispositioned, the same rule this file
+# already applies to its own threads.
+FOREIGN_JQ='
+  [.data.repository.pullRequest.reviewThreads.nodes[]?
+   | select(.isResolved | not)
+   | .comments.nodes[0]
+   | select((.author.__typename // "") == "Bot")
+   | (.author.login // "") as $login
+   | select(($owned | index($login)) | not)
+   | "\($login)  \(.path // "?")"]'
 DISPOSITIONED_JQ="$HUMAN_JQ"'
   [.data.repository.pullRequest.reviewThreads.nodes[]?
   | select(.isResolved)
@@ -571,7 +610,18 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
     # closed by "@coderabbitai resolve" with nobody saying anything is an
     # absence, and this gate never infers a pass from absence. Measured on
     # NyanCogs#20 and #23: resolved threads, zero replies.
-    threads=$(gh api graphql -f query="query{repository(owner:\"${REPO%%/*}\",name:\"${REPO##*/}\"){pullRequest(number:$PR){reviewThreads(first:100){nodes{isResolved comments(first:50){nodes{databaseId author{login __typename}}}}}}}}" 2>/dev/null || printf '{}')
+    threads=$(gh api graphql -f query="query{repository(owner:\"${REPO%%/*}\",name:\"${REPO##*/}\"){pullRequest(number:$PR){reviewThreads(first:100){nodes{isResolved comments(first:50){nodes{databaseId path author{login __typename}}}}}}}}" 2>/dev/null || printf '{}')
+    # GraphQL returns bot logins WITHOUT the "[bot]" suffix that REST carries,
+    # so the owned set is spelled the GraphQL way. Both of CodeRabbit's roles
+    # are one login here; the Copilot poller's owned set needs two.
+    foreign=$(printf '%s\n' "$threads" \
+      | jq -r --argjson owned '["coderabbitai"]' "$FOREIGN_JQ"' | .[]' 2>/dev/null)
+    # No `|| echo 0` here: grep -c ALREADY prints 0 when nothing matches, and it
+    # exits 1 while doing so, so the fallback appended a second zero and the
+    # variable became the two-line string "0\n0". That made the numeric test
+    # below fail with "integer expected" and fall through to CLEAN -- a guard
+    # against a fail-open, failing open, on its first live run.
+    n_foreign=$(printf '%s\n' "$foreign" | grep -c '[^[:space:]]') || true
     resolved_ids=$(printf '%s\n' "$threads" | dispositioned_ids || printf '[]')
     [ -n "$resolved_ids" ] || resolved_ids='[]'
     n_silent=$(printf '%s\n' "$threads" | unreplied_resolved || echo 0)
@@ -673,6 +723,22 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
         echo "$n_silent resolved thread(s) carry no human reply, so nothing records a"
         echo "decision about them. Reply to each with its disposition, then resolve."
         echo "RESULT=UNREPLIED count=$n_silent"
+        exit 0
+      fi
+
+      # Last gate before CLEAN, because it is the only one about a reviewer
+      # this script cannot read. Everything above decides what CodeRabbit said;
+      # this decides whether CodeRabbit was the only one who said anything.
+      if [ "${n_foreign:-0}" -ge 1 ]; then
+        echo
+        echo "CodeRabbit is clean on this commit, but $n_foreign unresolved finding(s) on this PR"
+        echo "belong to a reviewer this gate does not read. A clean verdict here means"
+        echo "CODERABBIT found nothing -- not that the pull request is clean."
+        echo "------------------------------------------------------------"
+        printf '%s\n' "$foreign"
+        echo "------------------------------------------------------------"
+        echo "Open them on the PR and disposition each one: reply, then resolve."
+        echo "RESULT=OTHERBOT count=$n_foreign"
         exit 0
       fi
 
