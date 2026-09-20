@@ -1,6 +1,6 @@
 ---
 name: codex-review-wait
-description: "[DORMANT: the Codex subscription is paused as of 2026-09-17, so this reviewer no longer runs. PR review is handled by copilot-review-wait - use that skill after opening or pushing to a PR. Trigger this one only when the user names Codex explicitly, or when the subscription is confirmed back.] Wait for the Codex GitHub PR reviewer (chatgpt-codex-connector) to finish reviewing a pull request, then classify the outcome as a clean pass (a +1 reaction) or suggestions (inline comments, printed for you to address). Optionally takes a PR number; otherwise it uses the current branch's PR and auto-detects the repo."
+description: "[DORMANT: the Codex subscription is paused as of 2026-09-17, so this reviewer no longer runs. PR review is split by star count - coderabbit-review-wait at ten stars and up, copilot-review-wait below. Check with 'gh api repos/OWNER/NAME -q .stargazers_count' and read the gate from that skill; the three define a clean pass differently and reusing another one's logic fails silently. Trigger this skill only when the user names Codex explicitly, or when the subscription is confirmed back.] Wait for the Codex GitHub PR reviewer (chatgpt-codex-connector) to finish reviewing a pull request, then classify the outcome as a clean pass (a +1 reaction) or suggestions (inline comments, printed for you to address). Optionally takes a PR number; otherwise it uses the current branch's PR and auto-detects the repo."
 ---
 
 # Wait for Codex review
