@@ -80,10 +80,23 @@ earlier version of this code printed one and should not have.
 
 `coderabbit-review-wait` can ask a classifier whether a collapsed section heading
 names work someone still has to look at. **It is off unless you turn it on, and
-it can only ever make a verdict stricter — `CLEAN` to `HOLD`, never the
-reverse.** A withheld result stays withheld whatever the classifier says, which
-is what makes every way it can fail — no key, a timeout, an HTTP error, a
-low-confidence answer — leave today's answer standing.
+today it changes no verdict at all.** It is in shadow mode: when it disagrees it
+prints `(jev: would HOLD ...)` next to the verdict the gate reached on its own,
+and the gate's verdict is what the script exits with. Enabling it cannot block a
+merge; it can only tell you that something would have.
+
+The design constraint it is being measured against, if it ever gets veto power:
+**one direction only, `CLEAN` → `HOLD`, never the reverse.** A withheld result
+would stay withheld whatever the classifier said. That is what makes every way
+it can fail — no key, a timeout, an HTTP error, a low-confidence answer — leave
+today's answer standing, and it is the property the shadow period exists to test
+before any of it is wired to a verdict.
+
+*(An earlier version of this paragraph claimed the `CLEAN → HOLD` transition as
+current behaviour. It is not; `jev_shadow` prints and returns, and `RESULT=CLEAN`
+is echoed immediately after. That claim was written from the design intent
+rather than from the code, which is the one thing this repository's own rules
+say not to do.)*
 
 You do not need it. Without a key, or with `JEV_SHADOW` unset, the scripts behave
 exactly as they do today.
@@ -103,10 +116,11 @@ true of disabled mode and not of enabled mode.
 
 With it on and no key, it prints `(jev: unavailable -- ...)` and leaves the
 verdict alone. So do a timeout, an HTTP error and a missing questions file. That is not
-politeness: the only transition this is ever allowed to make is `CLEAN → HOLD`,
-so every way it can fail leaves today's answer standing. A classifier that could
-turn a held verdict into a pass would need its failures handled one at a time,
-and one of them would be missed.
+politeness. In shadow mode it changes nothing either way, and the only
+transition it would ever be *permitted* is `CLEAN → HOLD`, so every way it can
+fail leaves today's answer standing rather than needing its own handling. A
+classifier that could turn a held verdict into a pass would need each of its
+failure modes caught individually, and one of them would be missed.
 
 Four outcomes, kept distinguishable on purpose:
 

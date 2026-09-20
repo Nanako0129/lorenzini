@@ -155,6 +155,34 @@ do
   ok "foreign review: $body" "$want" "$got"
 done
 
+# --- EACH foreign review is classified on its own, never as an aggregate ---
+# Raised on lorenzini#2 against the first version, which grepped a newline-joined
+# blob: review bodies contain newlines so "one line per review" was never true,
+# and one body matching the clean pattern marked the whole aggregate clean,
+# masking a second unrecognised review posted after it.
+classify_reviews() { # <reviews-json> -> one "state login" line per foreign review
+  jq -r --arg h "HEAD1" --arg found "$FOREIGN_BODY_RE" --arg clean "$FOREIGN_CLEAN_RE" \
+        --argjson owned '["coderabbitai[bot]"]' '
+    [.[][] | select(.commit_id == $h)
+     | select((.user.type // "") == "Bot")
+     | (.user.login // "") as $l | select(($owned | index($l)) | not)
+     | (.body // "") as $b
+     | if ($b | test($found)) then "found \($l)" elif ($b | test($clean)) then "clean \($l)" else "unknown \($l)" end] | .[]'
+}
+masking='[[{"commit_id":"HEAD1","user":{"login":"Copilot","type":"Bot"},"body":"Findings: None"},
+           {"commit_id":"HEAD1","user":{"login":"other-bot","type":"Bot"},"body":"a format nobody has seen"}]]'
+ok "a clean foreign review does not mask an unknown one" "clean Copilot
+unknown other-bot" "$(printf '%s' "$masking" | classify_reviews)"
+
+owned_only='[[{"commit_id":"HEAD1","user":{"login":"coderabbitai[bot]","type":"Bot"},"body":"anything"}]]'
+ok "the gate's own review is not foreign" "" "$(printf '%s' "$owned_only" | classify_reviews)"
+
+other_head='[[{"commit_id":"HEAD0","user":{"login":"Copilot","type":"Bot"},"body":"Findings: 3"}]]'
+ok "a foreign review on another commit is not at head" "" "$(printf '%s' "$other_head" | classify_reviews)"
+
+contradictory='[[{"commit_id":"HEAD1","user":{"login":"Copilot","type":"Bot"},"body":"Findings: None\nSuppressed comments (2)"}]]'
+ok "a contradictory body reads as found, not clean" "found Copilot" "$(printf '%s' "$contradictory" | classify_reviews)"
+
 # --- pipefail: a paginated read that dies after page 1 must not look complete ---
 # Without it the pipeline takes jq's status, and jq -s builds a valid PARTIAL
 # array from the pages that did arrive.

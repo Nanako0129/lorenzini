@@ -708,22 +708,31 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
     # Only unambiguous statements of findings count, so an ordinary clean
     # foreign review does not withhold the pass and this cannot block forever
     # on a repository where both reviewers run.
-    fbodies=$(printf '%s\n' "$reviews" | jq -r --arg h "$HEAD" --argjson owned '["coderabbitai[bot]"]' '
+    # ONE CLASSIFICATION PER REVIEW, decided inside jq where each review is
+    # still an object. The first version of this built a newline-joined blob and
+    # grepped the aggregate, which was wrong twice over: review bodies contain
+    # newlines, so "one line per review" was never true, and a single body
+    # matching FOREIGN_CLEAN_RE marked the whole aggregate clean -- masking a
+    # second, unrecognised review posted after it. Raised by CodeRabbit on
+    # lorenzini#2 against the version written one round earlier.
+    #
+    # found > clean > unknown, in that order: a body carrying both a finding
+    # marker and "Findings: None" is reporting a finding, and the safe reading
+    # of a contradictory body is the stricter one.
+    fclass=$(printf '%s\n' "$reviews" | jq -r \
+      --arg h "$HEAD" --arg found "$FOREIGN_BODY_RE" --arg clean "$FOREIGN_CLEAN_RE" \
+      --argjson owned '["coderabbitai[bot]"]' '
       [.[][] | select(.commit_id == $h)
        | select((.user.type // "") == "Bot")
        | (.user.login // "") as $l | select(($owned | index($l)) | not)
-       | "\($l)\t\(.body // "")"] | .[]' 2>/dev/null)
-    fbody_hits=$(printf '%s\n' "$fbodies" \
-      | grep -oE "$FOREIGN_BODY_RE" || true)
+       | (.body // "") as $b
+       | if   ($b | test($found)) then "found   \($l)"
+         elif ($b | test($clean)) then "clean   \($l)"
+         else                          "unknown \($l)  (format this gate does not recognise -- states neither findings nor their absence)"
+         end] | .[]' 2>/dev/null)
+    # Anything that is not positively clean withholds the pass.
+    fbody_hits=$(printf '%s\n' "$fclass" | grep -E '^(found|unknown)' || true)
     n_fbody=$(printf '%s\n' "$fbody_hits" | grep -c '[^[:space:]]') || true
-    # A foreign review at head that states neither findings nor their absence is
-    # UNRECOGNISED, and unrecognised is not clean. Without this, the check was a
-    # blocklist: one vendor heading rename and a body-only finding walks through.
-    if [ "${n_fbody:-0}" -eq 0 ] && [ -n "$(printf '%s' "$fbodies" | tr -d '[:space:]')" ] \
-       && ! printf '%s\n' "$fbodies" | grep -qE "$FOREIGN_CLEAN_RE"; then
-      n_fbody=1
-      fbody_hits='(a review whose format this gate does not recognise -- neither findings nor their absence stated)'
-    fi
     resolved_ids=$(printf '%s\n' "$threads" | dispositioned_ids || printf '[]')
     [ -n "$resolved_ids" ] || resolved_ids='[]'
     n_silent=$(printf '%s\n' "$threads" | unreplied_resolved || echo 0)
@@ -833,15 +842,17 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
       # this decides whether CodeRabbit was the only one who said anything.
       if [ "${n_fbody:-0}" -ge 1 ]; then
         echo
-        echo "CodeRabbit is clean on this commit, but another reviewer's review at this same"
-        echo "commit reports findings in its BODY, where they create no review thread."
-        echo "A clean verdict here means CODERABBIT found nothing -- not that the pull"
+        echo "CodeRabbit is clean on this commit, but another reviewer also reviewed it and"
+        echo "this gate cannot say that reviewer passed. Its findings, if any, live in its"
+        echo "own review body, where they create no review thread for anything to count."
+        echo "A clean verdict here would mean CODERABBIT found nothing -- not that the pull"
         echo "request is clean."
         echo "------------------------------------------------------------"
-        printf '%s\n' "$fbodies" | cut -f1 | sort -u | sed 's/^/reviewer: /'
         printf '%s\n' "$fbody_hits"
         echo "------------------------------------------------------------"
-        echo "Open the PR and read that review in full, then disposition each finding."
+        echo "'found' means that reviewer states it has findings. 'unknown' means its body"
+        echo "matches no shape this gate recognises, which is not the same as clean."
+        echo "Open the PR, read that review in full, and disposition what it says."
         echo "RESULT=OTHERBOT"
         exit 0
       fi
