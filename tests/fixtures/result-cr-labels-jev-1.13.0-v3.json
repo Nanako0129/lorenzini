@@ -2,7 +2,7 @@
  "round": "jev-1.13.0-v3",
  "family": "CR-labels",
  "tau": 0.5,
- "repeat": 1,
+ "repeat": 3,
  "score": {
   "accuracy": "29/30",
   "recall_hidden_work": "8/8",
@@ -14,9 +14,11 @@
    "id": "L01",
    "cat": "known_bucket",
    "expected": true,
-   "mean": 0.73,
+   "mean": 0.7,
    "vals": [
-    0.73
+    0.7,
+    0.71,
+    0.69
    ],
    "pass": true,
    "flip": false
@@ -25,9 +27,11 @@
    "id": "L02",
    "cat": "known_bucket",
    "expected": true,
-   "mean": 0.79,
+   "mean": 0.777,
    "vals": [
-    0.79
+    0.78,
+    0.77,
+    0.78
    ],
    "pass": true,
    "flip": false
@@ -36,9 +40,11 @@
    "id": "L03",
    "cat": "known_bucket",
    "expected": true,
-   "mean": 0.78,
+   "mean": 0.783,
    "vals": [
-    0.78
+    0.78,
+    0.78,
+    0.79
    ],
    "pass": true,
    "flip": false
@@ -47,9 +53,11 @@
    "id": "L04",
    "cat": "known_bucket",
    "expected": true,
-   "mean": 0.74,
+   "mean": 0.733,
    "vals": [
-    0.74
+    0.74,
+    0.73,
+    0.73
    ],
    "pass": true,
    "flip": false
@@ -58,8 +66,10 @@
    "id": "L05",
    "cat": "coverage_hole",
    "expected": true,
-   "mean": 0.86,
+   "mean": 0.867,
    "vals": [
+    0.87,
+    0.87,
     0.86
    ],
    "pass": true,
@@ -69,8 +79,10 @@
    "id": "L06",
    "cat": "failed_check",
    "expected": true,
-   "mean": 0.72,
+   "mean": 0.727,
    "vals": [
+    0.72,
+    0.74,
     0.72
    ],
    "pass": true,
@@ -80,8 +92,10 @@
    "id": "L07",
    "cat": "ambiguous",
    "expected": true,
-   "mean": 0.69,
+   "mean": 0.693,
    "vals": [
+    0.69,
+    0.7,
     0.69
    ],
    "pass": true,
@@ -91,9 +105,11 @@
    "id": "L08",
    "cat": "ambiguous",
    "expected": true,
-   "mean": 0.6,
+   "mean": 0.593,
    "vals": [
-    0.6
+    0.59,
+    0.58,
+    0.61
    ],
    "pass": true,
    "flip": false
@@ -102,8 +118,10 @@
    "id": "N01",
    "cat": "boilerplate",
    "expected": false,
-   "mean": 0.19,
+   "mean": 0.193,
    "vals": [
+    0.19,
+    0.2,
     0.19
    ],
    "pass": true,
@@ -113,8 +131,10 @@
    "id": "N02",
    "cat": "boilerplate",
    "expected": false,
-   "mean": 0.2,
+   "mean": 0.19,
    "vals": [
+    0.19,
+    0.18,
     0.2
    ],
    "pass": true,
@@ -124,9 +144,11 @@
    "id": "N03",
    "cat": "boilerplate",
    "expected": false,
-   "mean": 0.16,
+   "mean": 0.173,
    "vals": [
-    0.16
+    0.17,
+    0.17,
+    0.18
    ],
    "pass": true,
    "flip": false
@@ -135,9 +157,11 @@
    "id": "N04",
    "cat": "boilerplate",
    "expected": false,
-   "mean": 0.22,
+   "mean": 0.227,
    "vals": [
-    0.22
+    0.22,
+    0.23,
+    0.23
    ],
    "pass": true,
    "flip": false
@@ -148,6 +172,8 @@
    "expected": false,
    "mean": 0.09,
    "vals": [
+    0.09,
+    0.09,
     0.09
    ],
    "pass": true,
@@ -157,9 +183,11 @@
    "id": "N06",
    "cat": "advert",
    "expected": false,
-   "mean": 0.41,
+   "mean": 0.42,
    "vals": [
-    0.41
+    0.41,
+    0.4,
+    0.45
    ],
    "pass": true,
    "flip": false
@@ -168,9 +196,11 @@
    "id": "N07",
    "cat": "boilerplate",
    "expected": false,
-   "mean": 0.43,
+   "mean": 0.41,
    "vals": [
-    0.43
+    0.41,
+    0.41,
+    0.41
    ],
    "pass": true,
    "flip": false
@@ -179,8 +209,10 @@
    "id": "N08",
    "cat": "boilerplate",
    "expected": false,
-   "mean": 0.47,
+   "mean": 0.467,
    "vals": [
+    0.47,
+    0.46,
     0.47
    ],
    "pass": true,
@@ -190,9 +222,11 @@
    "id": "N09",
    "cat": "hard_negative",
    "expected": false,
-   "mean": 0.29,
+   "mean": 0.277,
    "vals": [
-    0.29
+    0.27,
+    0.28,
+    0.28
    ],
    "pass": true,
    "flip": false
@@ -201,9 +235,11 @@
    "id": "N10",
    "cat": "advert",
    "expected": false,
-   "mean": 0.41,
+   "mean": 0.39,
    "vals": [
-    0.41
+    0.4,
+    0.38,
+    0.39
    ],
    "pass": true,
    "flip": false
@@ -214,6 +250,8 @@
    "expected": false,
    "mean": 0.42,
    "vals": [
+    0.41,
+    0.43,
     0.42
    ],
    "pass": true,
@@ -223,8 +261,10 @@
    "id": "N12",
    "cat": "hard_negative",
    "expected": false,
-   "mean": 0.27,
+   "mean": 0.287,
    "vals": [
+    0.29,
+    0.3,
     0.27
    ],
    "pass": true,
@@ -234,9 +274,11 @@
    "id": "N13",
    "cat": "boilerplate",
    "expected": false,
-   "mean": 0.22,
+   "mean": 0.21,
    "vals": [
-    0.22
+    0.22,
+    0.21,
+    0.2
    ],
    "pass": true,
    "flip": false
@@ -247,7 +289,9 @@
    "expected": false,
    "mean": 0.44,
    "vals": [
-    0.44
+    0.44,
+    0.45,
+    0.43
    ],
    "pass": true,
    "flip": false
@@ -256,9 +300,11 @@
    "id": "N15",
    "cat": "advert",
    "expected": false,
-   "mean": 0.46,
+   "mean": 0.473,
    "vals": [
-    0.46
+    0.47,
+    0.48,
+    0.47
    ],
    "pass": true,
    "flip": false
@@ -267,8 +313,10 @@
    "id": "N16",
    "cat": "inside_finding",
    "expected": false,
-   "mean": 0.26,
+   "mean": 0.25,
    "vals": [
+    0.24,
+    0.25,
     0.26
    ],
    "pass": true,
@@ -278,9 +326,11 @@
    "id": "N17",
    "cat": "inside_finding",
    "expected": false,
-   "mean": 0.28,
+   "mean": 0.24,
    "vals": [
-    0.28
+    0.25,
+    0.24,
+    0.23
    ],
    "pass": true,
    "flip": false
@@ -289,9 +339,11 @@
    "id": "N18",
    "cat": "inside_finding",
    "expected": false,
-   "mean": 0.22,
+   "mean": 0.23,
    "vals": [
-    0.22
+    0.23,
+    0.23,
+    0.23
    ],
    "pass": true,
    "flip": false
@@ -300,8 +352,10 @@
    "id": "N19",
    "cat": "boilerplate",
    "expected": false,
-   "mean": 0.17,
+   "mean": 0.167,
    "vals": [
+    0.16,
+    0.17,
     0.17
    ],
    "pass": true,
@@ -311,9 +365,11 @@
    "id": "N20",
    "cat": "boilerplate",
    "expected": false,
-   "mean": 0.44,
+   "mean": 0.45,
    "vals": [
-    0.44
+    0.44,
+    0.45,
+    0.46
    ],
    "pass": true,
    "flip": false
@@ -322,8 +378,10 @@
    "id": "N21",
    "cat": "boilerplate",
    "expected": false,
-   "mean": 0.57,
+   "mean": 0.587,
    "vals": [
+    0.58,
+    0.61,
     0.57
    ],
    "pass": false,
@@ -335,6 +393,8 @@
    "expected": false,
    "mean": 0.14,
    "vals": [
+    0.15,
+    0.13,
     0.14
    ],
    "pass": true,

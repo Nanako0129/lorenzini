@@ -42,9 +42,15 @@ qset_hash=$(printf '%s' "$body" | jq -cS '.questions' | shasum -a 256 | cut -c1-
 out=$(mktemp); trap 'rm -f "$out"' EXIT
 mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
 
-meta=$(curl -sS -o "$out" -w '%{http_code} %{time_total}' --max-time "$TIMEOUT" \
-  -H "Authorization: Bearer $KEY" -H 'content-type: application/json' \
-  -d "$body" https://api.typesafe.ai/v1/systemone 2>>"${LOG%.jsonl}.err") \
+# The key goes in on STDIN as a curl config, never on the command line. An
+# argument vector is world-readable through ps for the length of the call, so
+# -H "Authorization: Bearer $KEY" hands the credential to every local account on
+# the machine. CWE-214. The request body stays an argument: it carries section
+# headings, not secrets.
+meta=$(printf 'header = "Authorization: Bearer %s"\n' "$KEY" \
+  | curl -sS --config - -o "$out" -w '%{http_code} %{time_total}' --max-time "$TIMEOUT" \
+    -H 'content-type: application/json' \
+    -d "$body" https://api.typesafe.ai/v1/systemone 2>>"${LOG%.jsonl}.err") \
   || { echo "jev: network or timeout after ${TIMEOUT}s" >&2; exit 4; }
 code=${meta%% *}; secs=${meta#* }
 

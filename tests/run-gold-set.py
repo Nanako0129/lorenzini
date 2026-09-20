@@ -16,7 +16,7 @@ direction is to run this and compare against the recorded baselines in
 tests/fixtures/. Write a NEW result file per variant; overwriting an old one
 destroys the comparison that makes the next edit judgeable.
 """
-import json, pathlib, statistics, subprocess, sys
+import json, os, pathlib, statistics, subprocess, sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TAU = 0.5
@@ -41,8 +41,16 @@ def call():
             for g in gold
         },
     }
-    r = subprocess.run([str(ROOT / "scripts/jev.sh"), "-"],
-                       input=json.dumps(body), capture_output=True, text=True)
+    # jev.sh caps its own HTTP call, but a hung child would otherwise park this
+    # script forever. The parent timeout is deliberately the inner one plus
+    # slack, so a genuine slow response is not mistaken for a hang.
+    inner = int(os.environ.get("JEV_TIMEOUT", "8"))
+    try:
+        r = subprocess.run([str(ROOT / "scripts/jev.sh"), "-"],
+                           input=json.dumps(body), capture_output=True, text=True,
+                           timeout=inner + 20)
+    except subprocess.TimeoutExpired:
+        sys.exit(f"jev.sh did not return within {inner + 20}s")
     if r.returncode:
         sys.exit(f"jev.sh exit {r.returncode}: {r.stderr.strip()}")
     return json.loads(r.stdout)
@@ -72,6 +80,16 @@ out = {"round": f"{spec.get('_model', 'jev-1.13.0')}-{variant}", "family": "CR-l
                  "false_positive": sum(1 for d in detail if not d["expected"] and not d["pass"]),
                  "flip_rate": f"{sum(d['flip'] for d in detail)}/{n}"},
        "detail": detail}
+# Never overwrite a recorded baseline. The docstring above says so and the code
+# below used not to: a verification run with one repeat replaced the committed
+# three-repeat v3 result, and its "0/30 flip rate" then meant nothing, because a
+# single pass cannot flip. A contract stated in a docstring and contradicted by
+# the function under it is not a contract.
 p = ROOT / f"tests/fixtures/result-cr-labels-{out['round']}.json"
+if p.exists():
+    alt = p.with_name(p.stem + f"-r{repeats}-{int(__import__('time').time())}.json")
+    print(f"\n{p.name} exists and is not being touched.")
+    print(f"Writing {alt.name} instead. Compare them, then keep whichever you mean to keep.")
+    p = alt
 json.dump(out, open(p, "w"), ensure_ascii=False, indent=1)
 print("\n" + json.dumps(out["score"], ensure_ascii=False), "\n->", p)

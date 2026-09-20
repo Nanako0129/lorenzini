@@ -55,18 +55,33 @@ exactly as they do today.
 | Key | `TYPESAFE_API_KEY`, or `~/.config/typesafe/api_key` (chmod 600) |
 | Get a key | <https://console.typesafe.ai/settings/keys> — early access, currently a waitlist |
 | In Claude Code | put `TYPESAFE_API_KEY` and `JEV_SHADOW` in the `env` block of `~/.claude/settings.json` |
-| Where holds are logged | `$XDG_STATE_HOME/lorenzini/shadow-holds.jsonl`, or `JEV_SHADOW_LOG` |
+| Where holds are logged | `$XDG_STATE_HOME/lorenzini/shadow-holds.jsonl`, falling back to `~/.local/state/lorenzini/` when `XDG_STATE_HOME` is unset. Override with `JEV_SHADOW_LOG`. Call records go to `jev-calls.jsonl` alongside it, or `JEV_LOG`. |
 
-With no key it prints `(jev: unavailable -- ...)` and leaves the verdict alone.
-So do a timeout, an HTTP error and a missing questions file. That is not
+**With `JEV_SHADOW` unset the scripts behave exactly as they did before this
+existed** — no call, no output, no dependency. That is the claim worth making
+precisely: with it *on*, the runs print extra lines, so "exactly as today" is
+true of disabled mode and not of enabled mode.
+
+With it on and no key, it prints `(jev: unavailable -- ...)` and leaves the
+verdict alone. So do a timeout, an HTTP error and a missing questions file. That is not
 politeness: the only transition this is ever allowed to make is `CLEAN → HOLD`,
 so every way it can fail leaves today's answer standing. A classifier that could
 turn a held verdict into a pass would need its failures handled one at a time,
 and one of them would be missed.
 
-Three outcomes, kept distinguishable on purpose — `did not run`, `ran and found
-nothing`, `ran and would hold`. Collapsing the first two into one silence is the
-mistake the ledger is mostly about.
+Four outcomes, kept distinguishable on purpose:
+
+| Line | Means |
+|---|---|
+| `(jev: unavailable -- ...)` | did not run; no key, a timeout, an HTTP error, a missing questions file |
+| `(jev: INCOMPLETE -- M of N heading(s) came back without a usable score)` | ran, but part of the response was missing or non-numeric. **Not a full check**, and the line below it covers only the headings that answered |
+| `(jev: checked X of N heading(s), nothing the patterns missed)` | ran, found nothing the patterns did not already catch |
+| `(jev: would HOLD -- ...)` | ran, found a heading the patterns do not know |
+
+Collapsing the first three into one silence is the mistake the ledger is mostly
+about, and the INCOMPLETE state exists because the first version of this code
+made exactly that mistake: a partial response produced an empty flag list and
+the run reported that nothing was missed.
 
 **The criteria are the classifier.** They live in
 [`coderabbit-review-wait/jev-questions-v3.json`](coderabbit-review-wait/jev-questions-v3.json),
