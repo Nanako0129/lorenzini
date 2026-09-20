@@ -22,16 +22,20 @@ An on-demand `@coderabbitai review` still works on all five.
 
 ## What CLEAN means here — it is not a +1
 
-The Codex reviewer signalled a clean pass with a `+1` reaction. **Copilot has no such signal.** It submits a review either way, and the summary body is present either way, so neither the review's existence nor its body is the gate. The only thing that distinguishes the two outcomes is the inline comment count.
+The Codex reviewer signalled a clean pass with a `+1` reaction. **Copilot has no such signal.** It submits a review whichever way the review went, so the review's existence is not the gate.
+
+**The body and the inline count answer two different questions, in order.** The body establishes *that a review happened*: Copilot can submit a review object without reviewing the code at all, and on `NyanCogs#31` it did — a `COMMENTED` review on the head commit whose entire body read *"Copilot was unable to review this pull request because the user who requested the review has reached their quota limit."* Zero inline comments, and every structural test for a clean pass satisfied. So a body carrying no `### <status>` line is `RESULT=NOT_REVIEWED`, never `CLEAN`. Only once that check passes does the inline comment count distinguish a clean result from suggestions.
+
+An earlier version of this paragraph said the body is not part of the gate. That was true of every real review and false about the objects that are not reviews, and reading the body as noise is precisely what let a non-review be reported as a pass.
 
 | | Codex (paused) | Copilot |
 |---|---|---|
-| Clean pass | `+1` reaction, newer than the head commit | A review whose `commit_id` is the head commit, with **zero inline comments** on that commit |
+| Clean pass | `+1` reaction, newer than the head commit | A review whose `commit_id` is the head commit, whose body carries a `### <status>` line, with **zero inline comments** on that commit |
 | Suggestions | Inline comments with `original_commit_id` = head | Same |
 | Review state | `COMMENTED` | `COMMENTED` by default. Copilot **never** posts `REQUEST_CHANGES`; it posts `APPROVED` only if approval is explicitly turned on in org settings (off by default, and a later push dismisses it). So **do not read `state` as the verdict** — count comments. |
 | Keyed to head by | Reaction timestamp (reactions carry no commit id) | The review's own `commit_id` — exact, no timestamp heuristic needed |
 
-So: **CLEAN = Copilot submitted a review for this exact head commit AND left no inline comments on it.** The script confirms a zero-comment review twice, one interval apart, because the review and its comments are read back through two endpoints and a read landing between the two writes would otherwise report a false CLEAN.
+So: **CLEAN = Copilot submitted a review for this exact head commit, its body carries a `### <status>` line, AND it left no inline comments on it.** The middle clause is not decoration — without it, a quota-exhaustion notice satisfies the other two. The script confirms a zero-comment review twice, one interval apart, because the review and its comments are read back through two endpoints and a read landing between the two writes would otherwise report a false CLEAN.
 
 ### Three things that will make you compute the wrong verdict
 
