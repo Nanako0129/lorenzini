@@ -55,7 +55,7 @@ gh api repos/OWNER/NAME -q .stargazers_count
 
 ```bash
 git clone https://github.com/Nanako0129/lorenzini.git ~/side-project/lorenzini
-cd ~/side-project/lorenzini && git checkout v0.2.0
+cd ~/side-project/lorenzini && git checkout v0.2.1
 for s in codex copilot coderabbit; do
   ln -s ~/side-project/lorenzini/$s-review-wait ~/.claude/skills/$s-review-wait
 done
@@ -66,7 +66,7 @@ done
 符號連結請固定在 release tag，不要對齊 `main`。這些 skill 決定了 PR 能否合併，而 `main` 是修補新發現 fail-open 的地方；如果直接指向 `main`，隨手一次 `git pull` 就會無聲改變本地的閘門邏輯。符號連結指向的是目錄而非 commit，更新時請明確切換：
 
 ```bash
-git fetch --tags && git checkout v0.2.0
+git fetch --tags && git checkout v0.2.1
 ```
 
 如果你在開發 `lorenzini` 本身，簽出的分支就是你當下跑的閘門。2026-09-20 曾實際測得：同一支輪詢器在同一個 PR 上相隔幾分鐘執行，一個分支給出 `RESULT=CLEAN`，另一個分支卻回報 `RESULT=NOT_REVIEWED`，而那份審查內文清清楚楚寫著程式碼從未被讀過。
@@ -75,7 +75,8 @@ git fetch --tags && git checkout v0.2.0
 
 | Tag | 支援狀態 | 說明 |
 |---|---|---|
-| `v0.2.0` | 可以用 | 現行基準版本，具備完整的跨審查工具防護、非審查狀態識別與格式辨識機制。 |
+| `v0.2.1` | 可以用 | 現行基準版本。修掉一個競態：審查正在啟動時，skip 通知會被當成終局狀態；另外把 Copilot 配額耗盡導向 CodeRabbit，而不是停在那裡。 |
+| `v0.2.0` | 已被取代 | 有跨審查工具、非審查狀態與格式辨識三道防護，但會在第一次看到 skip 通知時就當成終局。在 CodeRabbit auto review 關閉的 repo 上，這每一輪都會觸發。 |
 | `v0.1.1` | 已被取代 | 缺少 cross-reviewer、non-review 與格式辨識三道防護。 |
 | `v0.1.0` | 不要用 | 內含 4 道會在未掙得通過時誤報通過的缺陷閘門。 |
 
