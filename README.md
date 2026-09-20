@@ -51,6 +51,14 @@ cd ~/side-project/lorenzini && git fetch --tags && git checkout v0.2.0
 
 The symlinks keep working — they point at directories, not commits.
 
+**If you develop this repository, the checked-out branch IS the gate you are
+running.** The symlink resolves to the working tree, so switching branches
+switches the merge gate under you, silently. Measured here on 2026-09-20: the
+same poller, on the same pull request, minutes apart — `RESULT=CLEAN` from one
+branch and `RESULT=NOT_REVIEWED` from another, over a review body that said the
+code had never been read. Run a poller from a clean checkout of the tag you
+mean to be on, or read the verdict knowing which branch produced it.
+
 ### Versions
 
 | Tag | Use it? |
