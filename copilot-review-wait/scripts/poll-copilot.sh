@@ -20,13 +20,23 @@
 #   RESULT=SUGGESTIONS count=N    Copilot left N inline comments on HEAD (listed above) → fix, push, re-run
 #   RESULT=MISCOUNT claimed=N counted=M   Copilot's body reports more comments than were found
 #   RESULT=UNREAD format=X        a review format with no known clean shape -- a human must read it
-#   RESULT=TIMEOUT                no review in time (Copilot slow, out of quota, or not enabled for this account)
+#   RESULT=NOT_REVIEWED           a review object at HEAD whose body is not a verdict (e.g. quota exhausted)
+#   RESULT=TIMEOUT                no review in time (Copilot slow, or not enabled for this account)
 #   RESULT=ERROR ...              draft PR, or could not resolve repo/PR/tools
 #
 # Unlike the Codex reviewer, Copilot signals a clean pass by SUBMITTING A REVIEW
-# WITH NO INLINE COMMENTS -- there is no +1 reaction. The review body is always
-# present (a "Pull Request Overview" summary) whether or not it found anything,
-# so the body is NOT the signal; the inline comment count is.
+# WITH NO INLINE COMMENTS -- there is no +1 reaction. So the inline comment count
+# carries the verdict once a review has happened.
+#
+# But the body decides WHETHER one happened, and an earlier version of this
+# comment said the opposite: that a body is always present whichever way the
+# review went, so the body is not a signal. That was measured on reviews and
+# was true of every one of them; it was false about the objects that are not
+# reviews. On NyanCogs#31 Copilot submitted a review carrying only "unable to
+# review ... reached their quota limit", and reading the body as noise made
+# that indistinguishable from a clean pass. The body is now read first, for
+# the one question the inline count cannot answer. See the NOT_REVIEWED guard
+# below for the marker and the measurement behind it.
 #
 # Two logins, measured on Nanako0129/coralline#85 on 2026-09-17: the REVIEW is
 # authored by "copilot-pull-request-reviewer[bot]" but its INLINE COMMENTS are
@@ -140,6 +150,55 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
       # verdict and must never be reported as CLEAN.
       body=$(printf '%s\n' "$reviews" | jq -r --arg h "$HEAD" --arg b "$BOT" \
         '[.[][] | select(.user.login == $b and .commit_id == $h)] | last | .body // ""' 2>/dev/null)
+      # A REVIEW OBJECT IS NOT A REVIEW. Checked before anything else here,
+      # because every guard below assumes a review actually happened and the
+      # sentence printed after this one would otherwise assert that it did.
+      #
+      # Nanako0129/NyanCogs#31, head 8f6eee6, 2026-09-20: Copilot submitted a
+      # COMMENTED review on the head commit with zero inline comments and a
+      # 119-character body reading "Copilot was unable to review this pull
+      # request because the user who requested the review has reached their
+      # quota limit." That satisfies "a review of head plus an empty inline set"
+      # exactly, and this script printed RESULT=CLEAN over it -- a pass over a
+      # review object stating in plain English that no review was performed.
+      # Reported by the messagewatch-rule-based-alerts session and reproduced
+      # here by running this script against that pull request before the fix.
+      #
+      # The test is POSITIVE EVIDENCE, not one more entry on a blocklist. Every
+      # other guard in this file names a specific bad thing, which is why each
+      # new vendor message has arrived as a fresh clean verdict; requiring a
+      # verdict to look like a verdict catches the next one too, whatever it says.
+      #
+      # `^### ` is the marker, measured 2026-09-20 over 41 Copilot review bodies
+      # across nine repositories and BOTH body formats: the older one opening
+      # `### 🟢 Approval recommended` with a `Comments generated:` count, and
+      # `ccr-overview-v2`, which opens with an HTML comment and carries
+      # `Findings:` instead. All 40 real reviews carry a `### ` status line; the
+      # quota message is the only body without one. `Findings:` and `Comments
+      # generated:` were both rejected as the marker because each is absent from
+      # one of the two formats. No Copilot review with an empty body appeared in
+      # that survey, so requiring the line cannot block a pass observed to exist.
+      if ! printf '%s\n' "$body" | grep -qE '^### '; then
+        echo "Copilot submitted a review object on this commit, but its body is not a review."
+        echo "A verdict body carries a '### <status>' line in both of Copilot's formats."
+        echo "This one does not, so nothing here says the code was read."
+        echo "------------------------------------------------------------"
+        printf '%s\n' "$body"
+        echo "------------------------------------------------------------"
+        case "$body" in
+          *"reached their quota limit"*)
+            echo "This is the quota message: the review was never performed, and the quota"
+            echo "is per requesting user, so every repository on the Copilot routing table"
+            echo "is affected at the same time. Wait for the quota to reset, or trigger the"
+            echo "other reviewer by hand with a top-level '@coderabbitai review' comment --"
+            echo "which works on these repositories precisely because their CodeRabbit auto"
+            echo "review is disabled and the manual command is the documented escape hatch."
+            ;;
+        esac
+        echo "RESULT=NOT_REVIEWED"
+        exit 0
+      fi
+
       echo "Copilot reviewed the current commit and left no inline comments."
       printf '%s\n' "$body" | head -1 | sed 's/^/Review body says: /'
       sup=$(printf '%s\n' "$body" | grep -c 'Suppressed comments')
