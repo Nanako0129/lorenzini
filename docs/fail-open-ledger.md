@@ -328,6 +328,56 @@ of defence.* The clean round arrived by deleting the check, not by fixing it.
 
 ---
 
+## 10. The gate could not see the other reviewer, on its own pull request
+
+**2026-09-20, `Nanako0129/lorenzini#2`.** Three real findings sat unresolved
+through a `NITPICKS` verdict and a `SUGGESTIONS` verdict, and the next round
+would have reported `CLEAN` over them.
+
+lorenzini is 13 stars, so the gate run on its own pull requests is
+`poll-coderabbit.sh`, which filters review comments to `coderabbitai[bot]`.
+**Copilot reviews this repository too.** Its three findings at commit `058c1d9`
+were invisible to every verdict the branch produced, and they were found by
+listing the review threads by hand, not by anything in the script.
+
+Two of the three were defects no CodeRabbit round raised:
+
+- `sort -u` on the collapsed-section headings collapsed two distinct `<details>`
+  sections sharing a `<summary>` into one. Measured on a three-section body with
+  one repeated heading: the pipeline emitted **2**, so one section was never
+  sent to the classifier and the run printed *"checked 2 of 2 heading(s)"* over
+  it. Deduplicating the input to a counting gate turns a duplicate into an
+  absence.
+- The shadow-log append was unchecked, so an unwritable parent lost the only
+  persistent record of a would-HOLD while the terminal still printed the
+  candidate — with `scripts/jev.sh` stating that exact rule for its own log,
+  four files away.
+
+**Shape:** a filter scoped to one reviewer's login cannot distinguish "the other
+reviewer found nothing" from "I never looked". Entry #1 is the same sentence
+about a *wrong* login; this is the same sentence about a *complete* one.
+
+**The premise that failed is the routing, not the filter.** The repository split
+is real — measured the same day, all five under-ten-star repositories carry
+CodeRabbit's own notice that *"Auto reviews are disabled on this repository"* —
+and a first version of this entry claimed the star count routed nothing at all,
+built on a survey that counted a skip notice as evidence of reviewing. A peer
+session refuted it. What is true is narrower and still enough: a hand or
+checkbox trigger can put the non-routed reviewer on any pull request, leaving no
+trace the routed poller reads. `NyanCogs#29` is the other demonstration — auto
+review disabled, something triggered CodeRabbit anyway, three rounds and eight
+inline findings, three of them on lines Copilot's first round never touched.
+
+**Now:** nothing yet. This is the open entry. The fix is to stop filtering by
+login, group findings by author, and withhold `CLEAN` with a named verdict
+whenever a reviewer this gate does not own has undispositioned findings — and
+until that ships, a clean verdict from either poller means *the reviewer it was
+written for found nothing*, which is not the same as the pull request being
+clean. Recorded here as open rather than described as handled, because the entry
+above this one is about exactly that difference.
+
+---
+
 ## What the pattern is
 
 Most of them are the same sentence with different nouns: **an empty set was read
