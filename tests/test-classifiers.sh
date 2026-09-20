@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# Regression tests for the classification helpers, run as:  bash tests/test-classifiers.sh
+#
+# WHY THIS EXISTS. Every fix in docs/fail-open-ledger.md was verified by a
+# throwaway probe that proved one thing and was deleted, so every round started
+# from zero and several rounds reintroduced a defect an earlier round had
+# already fixed -- a failed read counted as empty, a zero counted as a finding,
+# an unpaginated read counted as complete. The ledger names that as the actual
+# mechanism of non-convergence. These assertions are those probes, kept.
+#
+# The helpers are SOURCED from the real scripts rather than copied, which is
+# what the source guard in each poller was put there for: a copy drifts, and a
+# test passing against a copy of the gate says nothing about the gate.
+set -u
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# shellcheck source=/dev/null
+source "$ROOT/coderabbit-review-wait/scripts/poll-coderabbit.sh"
+
+pass=0 fail=0
+ok() { # ok <name> <expected> <actual>
+  if [ "$2" = "$3" ]; then pass=$((pass+1));
+  else fail=$((fail+1)); printf 'FAIL  %s\n        expected: %s\n        actual:   %s\n' "$1" "$2" "$3"; fi
+}
+verdict() { classify_bodies "$1" 2>/dev/null | grep -oE 'RESULT=[A-Z]+( count=[0-9]+)?' | tail -1; }
+
+# --- HIDDEN_RE: the buckets whose findings the reviewer's own count ignores ---
+# Ledger entries 2, 4 and 11. Each spelling is here because a review carrying it
+# was reported CLEAN before it was added.
+for spec in \
+  'Nitpick comments (3)|MATCH' \
+  'Outside diff range comments (1)|MATCH' \
+  'Duplicate comments (2)|MATCH' \
+  'Files skipped from review as they are similar to previous changes (1)|MATCH' \
+  'Nitpick comments|no' \
+  'Suppressed comments (2)|no'
+do
+  body=${spec%|*}; want=${spec#*|}
+  got=no; printf '%s' "$body" | grep -qE "$HIDDEN_RE" && got=MATCH
+  ok "HIDDEN_RE: $body" "$want" "$got"
+done
+
+# --- classify_bodies: a hidden section withholds CLEAN and sums every section ---
+ok "one nitpick section" "RESULT=NITPICKS count=3" \
+   "$(verdict '**Actionable comments posted: 0**
+<summary>Nitpick comments (3)</summary>')"
+# No head -N when summing: a body with more sections than a cap would silently
+# drop the overflow, which is the bug the awk sum replaced.
+ok "two sections are summed" "RESULT=NITPICKS count=5" \
+   "$(verdict 'Nitpick comments (3)
+Outside diff range comments (2)')"
+# Ledger entry 11: a review whose findings are ALL outside the diff carries no
+# "Actionable comments posted" line at all.
+ok "outside-diff only, no count line" "RESULT=NITPICKS count=1" \
+   "$(verdict '> [!CAUTION]
+> Outside diff range comments (1)')"
+
+# --- pre-merge checks: parse the TALLY, never the rows (ledger entry 4) ---
+# The failed row's Status cell reads "Warning"; the failure marker appears only
+# in the tally, so a parser reading rows finds nothing and reports a pass.
+ok "premerge failure in the tally" "RESULT=PREMERGE count=1" \
+   "$(verdict 'No actionable comments were generated
+Pre-merge checks | ✅ 4 | ❌ 1
+Failed checks
+Docstring Coverage | ⚠️ Warning')"
+# Syrtis-Windows#115: an all-pass tally omits the failure field entirely, so a
+# pattern requiring two pipes does not match it.
+ok "all-pass tally is not a failure" "" \
+   "$(verdict 'No actionable comments were generated
+Pre-merge checks | ✅ 5')"
+
+# --- a clean body decides nothing here (the CLEAN path lives in the loop) ---
+ok "clean body blocks nothing" "" "$(verdict 'No actionable comments were generated')"
+
+# --- UNREPLIED / DISPOSITIONED: a resolved thread is only a disposition when a
+# HUMAN replied, keyed on the GraphQL actor type. Ledger entry 4: testing
+# endswith("[bot]") classified every bot as human, because GraphQL omits the
+# suffix REST carries -- a bot-only resolved thread was then excused.
+threads='{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[
+  {"isResolved":true,  "comments":{"nodes":[{"databaseId":1,"path":"a","author":{"login":"coderabbitai","__typename":"Bot"}}]}},
+  {"isResolved":true,  "comments":{"nodes":[{"databaseId":2,"path":"b","author":{"login":"coderabbitai","__typename":"Bot"}},
+                                            {"databaseId":3,"path":"b","author":{"login":"Nanako0129","__typename":"User"}}]}},
+  {"isResolved":false, "comments":{"nodes":[{"databaseId":4,"path":"c","author":{"login":"Copilot","__typename":"Bot"}}]}},
+  {"isResolved":false, "comments":{"nodes":[{"databaseId":5,"path":"d","author":null}]}},
+  {"isResolved":false, "comments":{"nodes":[{"databaseId":6,"path":"e","author":{"login":"coderabbitai","__typename":"Bot"}}]}}
+]}}}}}'
+ok "bot-only resolve is not a disposition" "1" \
+   "$(printf '%s' "$threads" | unreplied_resolved)"
+ok "human-replied thread is dispositioned"  "[2,3]" \
+   "$(printf '%s' "$threads" | dispositioned_ids)"
+
+# --- FOREIGN_JQ: the reviewer this gate does not read (ledger entry 10) ---
+# Owned excluded; the gate's own unresolved thread excluded; a resolved foreign
+# thread excluded (dispositioned); a null author is not a Bot; everything else
+# flagged. The jq trap this caught in review: inside index(...) the input is the
+# filter's own input, so the login must be bound with `as` first or the
+# expression aborts and silently counts zero.
+foreign=$(printf '%s' "$threads" | jq -r --argjson owned '["coderabbitai"]' "$FOREIGN_JQ"' | .[]')
+ok "foreign bots flagged"      "Copilot  c" "$foreign"
+ok "foreign count"             "1"          "$(printf '%s\n' "$foreign" | grep -c '[^[:space:]]')"
+
+# --- zero is not a finding (fail-closed, but a gate that cries wolf gets ignored) ---
+for spec in 'Suppressed comments (0)|no' 'Suppressed comments (4)|MATCH' \
+            'Comments generated: 0|no'   'Comments generated: 3|MATCH'
+do
+  # $FOREIGN_BODY_RE comes from the script, NOT a copy. A first version of this
+  # block inlined the pattern and a mutation run walked straight past it:
+  # widening the script's pattern to accept (0) broke no assertion, because the
+  # assertion was testing its own duplicate. That is the failure this whole
+  # repository is about, reproduced inside its test suite.
+  body=${spec%|*}; want=${spec#*|}; got=no
+  printf '%s' "$body" | grep -qE "$FOREIGN_BODY_RE" && got=MATCH
+  ok "foreign-body marker: $body" "$want" "$got"
+done
+
+# --- pipefail: a paginated read that dies after page 1 must not look complete ---
+# Without it the pipeline takes jq's status, and jq -s builds a valid PARTIAL
+# array from the pages that did arrive.
+st=$( { printf '{"a":1}\n'; exit 3; } | jq -s 'length' >/dev/null; echo $? )
+ok "no pipefail hides producer failure" "0" "$st"
+st=$( set -o pipefail; { printf '{"a":1}\n'; exit 3; } | jq -s 'length' >/dev/null; echo $? )
+ok "pipefail surfaces producer failure" "3" "$st"
+
+printf '\n%d passed, %d failed\n' "$pass" "$fail"
+[ "$fail" -eq 0 ]

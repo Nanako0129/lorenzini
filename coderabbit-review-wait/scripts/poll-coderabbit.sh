@@ -60,6 +60,18 @@ set -u
 # nothing. It withholds CLEAN like the other buckets.
 HIDDEN_RE='(Nitpick comments|Outside diff range comments|Duplicate comments|Files skipped from review[^(]*) \(([0-9]+)\)'
 
+# A FOREIGN reviewer's body markers: the unambiguous statements that it found
+# something. Named, so the test suite drives the same pattern the gate does --
+# a test carrying its own copy of a regex passes while the gate's copy rots,
+# which is this repository's "a contract stated in N places" failure wearing a
+# test suite. A mutation run proved it: widening this pattern to accept (0)
+# broke nothing, because the assertion held a duplicate.
+#
+# Zero is not a finding. "Suppressed comments (0)" on an otherwise clean foreign
+# review would otherwise return OTHERBOT -- fails closed, but a gate that cries
+# wolf on clean pull requests is one people learn to override.
+FOREIGN_BODY_RE='Suppressed comments \([1-9][0-9]*\)|Comments generated:[*[:space:]]*[1-9][0-9]*|Findings:[*[:space:]]*[1-9][0-9]*'
+
 # A resolved thread counts as DISPOSITIONED only when a HUMAN has commented in
 # it. SKILL.md:139 states the reply-before-resolve rule as the premise that
 # makes "resolved = handled" safe, but nothing enforced it: "@coderabbitai
@@ -682,7 +694,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
        | (.user.login // "") as $l | select(($owned | index($l)) | not)
        | "\($l)\t\(.body // "")"] | .[]' 2>/dev/null)
     fbody_hits=$(printf '%s\n' "$fbodies" \
-      | grep -oE 'Suppressed comments \([1-9][0-9]*\)|Comments generated:[*[:space:]]*[1-9][0-9]*|Findings:[*[:space:]]*[1-9][0-9]*' || true)
+      | grep -oE "$FOREIGN_BODY_RE" || true)
     n_fbody=$(printf '%s\n' "$fbody_hits" | grep -c '[^[:space:]]') || true
     resolved_ids=$(printf '%s\n' "$threads" | dispositioned_ids || printf '[]')
     [ -n "$resolved_ids" ] || resolved_ids='[]'
