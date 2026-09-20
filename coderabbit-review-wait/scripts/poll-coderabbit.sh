@@ -610,7 +610,31 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
     # closed by "@coderabbitai resolve" with nobody saying anything is an
     # absence, and this gate never infers a pass from absence. Measured on
     # NyanCogs#20 and #23: resolved threads, zero replies.
-    threads=$(gh api graphql -f query="query{repository(owner:\"${REPO%%/*}\",name:\"${REPO##*/}\"){pullRequest(number:$PR){reviewThreads(first:100){nodes{isResolved comments(first:50){nodes{databaseId path author{login __typename}}}}}}}}" 2>/dev/null || printf '{}')
+    # A FAILED GRAPHQL CALL IS NOT AN EMPTY THREAD SET. The `|| printf '{}'`
+    # here fed THREE consumers an authoritative absence on any rate limit or
+    # 5xx: the dispositioned-ids set, the unreplied-thread count, and the
+    # foreign-reviewer guard below. Raised by CodeRabbit against the identical
+    # line in the sibling script on lorenzini#1; the same line was in this file
+    # and had to be found by grep rather than by being reported, which is the
+    # "a contract stated in N places" rule applied to a bug instead of a
+    # contract.
+    #
+    # The SHAPE is checked, not just the exit status: GraphQL answers a failed
+    # query with HTTP 200 and an `errors` array, so `gh api graphql` exits zero
+    # on a query that returned no data at all.
+    # PAGINATED. `reviewThreads(first:100)` silently truncates at 100, which is
+    # the same defect as the reviews endpoint capping at 30 without --paginate
+    # -- a long-lived pull request pushes its newest threads out of the window
+    # and every consumer here reads their absence as "handled". gh supplies
+    # $endCursor itself when --paginate is used, emitting one JSON document per
+    # page; `jq -s` merges them back into the single shape the three filters
+    # below already expect, so nothing downstream changes.
+    if ! threads=$(gh api graphql --paginate -f query="query(\$endCursor:String){repository(owner:\"${REPO%%/*}\",name:\"${REPO##*/}\"){pullRequest(number:$PR){reviewThreads(first:100, after:\$endCursor){pageInfo{hasNextPage endCursor} nodes{isResolved comments(first:50){nodes{databaseId path author{login __typename}}}}}}}}" 2>/dev/null \
+                   | jq -s '{data:{repository:{pullRequest:{reviewThreads:{nodes:[.[].data.repository.pullRequest.reviewThreads.nodes[]]}}}}}' 2>/dev/null) \
+       || ! printf '%s\n' "$threads" | jq -e '.data.repository.pullRequest.reviewThreads.nodes | type == "array"' >/dev/null 2>&1; then
+      [ "${thread_warned:-0}" = "1" ] || { echo "Could not read the review threads. Retrying rather than counting zero findings."; thread_warned=1; }
+      clean_seen=0; sleep "$INTERVAL"; continue
+    fi
     # GraphQL returns bot logins WITHOUT the "[bot]" suffix that REST carries,
     # so the owned set is spelled the GraphQL way. Both of CodeRabbit's roles
     # are one login here; the Copilot poller's owned set needs two.
@@ -622,6 +646,27 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
     # below fail with "integer expected" and fall through to CLEAN -- a guard
     # against a fail-open, failing open, on its first live run.
     n_foreign=$(printf '%s\n' "$foreign" | grep -c '[^[:space:]]') || true
+
+    # A FOREIGN BOT'S FINDINGS NEED NOT CREATE A THREAD. Copilot withholds
+    # low-confidence findings into a "Suppressed comments" body section that
+    # never becomes an inline comment and therefore never becomes a review
+    # thread -- ledger entry 2, eight real defects over four clean verdicts.
+    # The threads-only guard was answering "did the other reviewer open a
+    # conversation", not "did it find something", so a foreign review made
+    # entirely of body findings counted zero and fell through to CLEAN.
+    #
+    # Raised by CodeRabbit about the mirror of this code in the sibling script.
+    # Only unambiguous statements of findings count, so an ordinary clean
+    # foreign review does not withhold the pass and this cannot block forever
+    # on a repository where both reviewers run.
+    fbodies=$(printf '%s\n' "$reviews" | jq -r --arg h "$HEAD" --argjson owned '["coderabbitai[bot]"]' '
+      [.[][] | select(.commit_id == $h)
+       | select((.user.type // "") == "Bot")
+       | (.user.login // "") as $l | select(($owned | index($l)) | not)
+       | "\($l)\t\(.body // "")"] | .[]' 2>/dev/null)
+    fbody_hits=$(printf '%s\n' "$fbodies" \
+      | grep -oE 'Suppressed comments \([0-9]+\)|Comments generated:[*[:space:]]*[1-9][0-9]*|Findings:[*[:space:]]*[1-9][0-9]*' || true)
+    n_fbody=$(printf '%s\n' "$fbody_hits" | grep -c '[^[:space:]]') || true
     resolved_ids=$(printf '%s\n' "$threads" | dispositioned_ids || printf '[]')
     [ -n "$resolved_ids" ] || resolved_ids='[]'
     n_silent=$(printf '%s\n' "$threads" | unreplied_resolved || echo 0)
@@ -729,6 +774,21 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
       # Last gate before CLEAN, because it is the only one about a reviewer
       # this script cannot read. Everything above decides what CodeRabbit said;
       # this decides whether CodeRabbit was the only one who said anything.
+      if [ "${n_fbody:-0}" -ge 1 ]; then
+        echo
+        echo "CodeRabbit is clean on this commit, but another reviewer's review at this same"
+        echo "commit reports findings in its BODY, where they create no review thread."
+        echo "A clean verdict here means CODERABBIT found nothing -- not that the pull"
+        echo "request is clean."
+        echo "------------------------------------------------------------"
+        printf '%s\n' "$fbodies" | cut -f1 | sort -u | sed 's/^/reviewer: /'
+        printf '%s\n' "$fbody_hits"
+        echo "------------------------------------------------------------"
+        echo "Open the PR and read that review in full, then disposition each finding."
+        echo "RESULT=OTHERBOT count=$(( ${n_foreign:-0} + n_fbody ))"
+        exit 0
+      fi
+
       if [ "${n_foreign:-0}" -ge 1 ]; then
         echo
         echo "CodeRabbit is clean on this commit, but $n_foreign unresolved finding(s) on this PR"
