@@ -396,9 +396,40 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   # Corroborating signal, not relied on here: those answer-reviews carry only
   # comments with in_reply_to_id set, so a review whose comments are all replies
   # is not a review round either.
-  verdict_reviews=$(printf '%s\n' "$athead" | jq '[.[] | select(
+  # A HIDDEN-FINDINGS SECTION IS ALSO A COMPLETION MARKER, and leaving it out
+  # is the one bug in this file that failed CLOSED rather than open.
+  #
+  # Measured on Nanako0129/lorenzini#1, head 72d7853, 2026-09-20. CodeRabbit
+  # submitted a COMMENTED review at head, 3944 characters, zero inline comments,
+  # opening:
+  #
+  #   > [!CAUTION]
+  #   > Some comments are outside the diff and can't be posted inline due to
+  #   > GitHub limitations.
+  #   > **Outside diff range comments (1)**
+  #
+  # and carrying NEITHER verdict phrase. When every finding in a round lands
+  # outside the diff there is nothing to count, so no "Actionable comments
+  # posted: N" line is emitted -- and the state is COMMENTED, not APPROVED. The
+  # review was therefore not recognised as a verdict at all, the loop kept
+  # polling a finished review, and it reported TIMEOUT: "the verdict may still
+  # arrive" over a verdict that had arrived twenty minutes earlier and contained
+  # a finding.
+  #
+  # That is the expensive direction of this particular miss. The hidden buckets
+  # are where the higher-value findings live -- GitHub can only anchor an inline
+  # comment inside a diff hunk, so a finding about how the change interacts with
+  # code it did NOT touch is always parked in the body -- so the review shape
+  # this failed to recognise is exactly the shape worth not missing.
+  #
+  # $HIDDEN_RE is reused rather than a new pattern written. It is already the
+  # single definition of "a bucket the count ignores", and a second spelling of
+  # it here would be the contract-in-N-places failure that this file has hit
+  # four times. An in-progress notice cannot match it: it has no section counts.
+  verdict_reviews=$(printf '%s\n' "$athead" | jq --arg hidden "$HIDDEN_RE" '[.[] | select(
       .state == "APPROVED"
       or ((.body // "") | test("Actionable comments posted:|No actionable comments were generated"))
+      or ((.body // "") | test($hidden))
     )] | length' 2>/dev/null || echo 0)
 
   # A clean outcome can arrive with NO review object at all. Measured on
