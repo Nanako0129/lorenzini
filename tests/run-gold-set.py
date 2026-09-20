@@ -30,6 +30,13 @@ variant = spec.get("_variant", qfile.stem)
 
 
 def call():
+    """Score every gold-set label once and return the raw answers.
+
+    Every label is embedded in its own question rather than passed as a shared
+    list, so one label cannot influence another's score. The question and both
+    criteria come from the spec file, unmodified: this runner must measure the
+    classifier that ships, not a paraphrase of it.
+    """
     body = {
         "state": {"source": "GitHub pull request review body, collapsed section headings"},
         "questions": {
