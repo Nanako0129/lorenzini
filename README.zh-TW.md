@@ -44,7 +44,7 @@ gh api repos/OWNER/NAME -q .stargazers_count
 | `RESULT=MISCOUNT claimed=N counted=M` | 審查工具自己報的數字比閘門數到的多。 | 不算通過。差距本身就是 finding：它貼出來的東西有一部分沒被算到。 |
 | `RESULT=UNREPLIED count=N` | N 條已標記解決的討論串沒有人類回覆。 | 不算通過。`@coderabbitai resolve` 會一次關掉全部，留下無人說明的處置紀錄。先寫下處置理由再 resolve。 |
 | `RESULT=OTHERBOT` | 這個閘門乾淨，但 PR 上有它讀不到的 reviewer 留下未處置的 findings──可能是未解決討論串，也可能藏在那個 reviewer 自己的 review 內文裡、不產生討論串。 | 不算通過。這裡的乾淨只代表那一個 reviewer 沒找到東西。打開 PR 讀另一個工具說了什麼。 |
-| `RESULT=NOT_REVIEWED` | head 上有 review 物件但內文不是 verdict。 | 帶 `reason=quota` 代表 Copilot 什麼都沒審。配額以請求者為單位，那一側的儲存庫會同時全部失去 reviewer：立刻改用 CodeRabbit，不要等。其餘情況在逾時才回報，不是一看到就判定。 |
+| `RESULT=NOT_REVIEWED` | head 上有 review 物件但內文不是 verdict。 | 帶 `reason=quota fallback=coderabbit` 代表 Copilot 什麼都沒審。配額以請求者為單位，那一側的儲存庫會同時全部失去 reviewer：立刻改用 CodeRabbit，不要等。其餘情況在逾時才回報，不是一看到就判定。 |
 | `RESULT=UNREAD format=X` | 審查內文的格式沒有已驗證的乾淨樣本，目前是 `ccr-overview-v2`。 | 不算通過也不算失敗，是坦承。該格式從未捕捉到確認乾淨的樣本，零 findings 證明不了什麼。內文會完整印出，由人來讀。 |
 | `RESULT=TIMEOUT` | head 在時限內沒有 verdict。 | 閘門扣住，絕不將超時當作通過。 |
 | `RESULT=ERROR ...` | 輪詢解決不了的狀態：草稿 PR、審查被暫停或跳過、GitHub API 配額耗盡、無法解析 repo/PR。 | 修正前置條件。配額耗盡會直接指出重置時間，不會一路輪詢到逾時。 |

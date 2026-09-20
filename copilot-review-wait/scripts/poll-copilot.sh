@@ -20,7 +20,11 @@
 #   RESULT=SUGGESTIONS count=N    Copilot left N inline comments on HEAD (listed above) → fix, push, re-run
 #   RESULT=MISCOUNT claimed=N counted=M   Copilot's body reports more comments than were found
 #   RESULT=UNREAD format=X        a review format with no known clean shape -- a human must read it
-#   RESULT=NOT_REVIEWED           a review object at HEAD whose body is not a verdict (e.g. quota exhausted)
+#   RESULT=NOT_REVIEWED           a review object at HEAD whose body is not a verdict
+#   RESULT=NOT_REVIEWED reason=quota fallback=coderabbit
+#                                 Copilot's quota is out -- it reviewed nothing, and the quota is
+#                                 per USER so every repo on this side is out at once. Switch to
+#                                 CodeRabbit (command printed); do not wait and do not merge.
 #   RESULT=OTHERBOT              Copilot is clean, but this PR carries undispositioned findings
 #                                 from a reviewer this gate does not read (listed above)
 #   RESULT=TIMEOUT                no review in time (Copilot slow, or not enabled for this account)
@@ -195,6 +199,23 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
         echo "------------------------------------------------------------"
         printf '%s\n' "$body"
         echo "------------------------------------------------------------"
+        # QUOTA EXHAUSTION IS NOT A WAIT, IT IS A ROUTING CHANGE.
+        #
+        # The quota is per requesting user, so when it runs out EVERY repository
+        # on the Copilot side of the split loses its automatic reviewer at the
+        # same moment. A caller that reports NOT_REVIEWED and stops leaves the
+        # pull request with no reviewer at all -- and the next person to look
+        # sees a gate that said something other than CLEAN and a branch nobody
+        # is reviewing, which is how unreviewed code gets merged by a human
+        # deciding the tooling is broken.
+        #
+        # So the verdict carries reason=quota for a caller to key on, and the
+        # fallback is printed as the exact command to run rather than described.
+        # CodeRabbit is available on precisely these repositories BECAUSE their
+        # auto review is disabled: the manual command is the documented escape
+        # hatch, and it is unaffected by Copilot's quota.
+        quota=0
+        case "$body" in *"reached their quota limit"*) quota=1 ;; esac
         case "$body" in
           *"reached their quota limit"*)
             echo "This is the quota message: the review was never performed, and the quota"
@@ -205,9 +226,37 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
             echo "review is disabled and the manual command is the documented escape hatch."
             ;;
         esac
-        echo "RESULT=NOT_REVIEWED"
-        exit 0
+        if [ "$quota" = "1" ]; then
+          echo
+          echo "SWITCH REVIEWERS. Do not wait for the quota and do not merge on this verdict:"
+          echo "  gh pr comment $PR --repo $REPO --body '@coderabbitai review'"
+          echo "  bash <skill-dir>/../coderabbit-review-wait/scripts/poll-coderabbit.sh $PR --repo $REPO"
+          echo "The CodeRabbit gate defines a clean pass differently; read it from"
+          echo "coderabbit-review-wait/SKILL.md rather than carrying this one's logic across."
+          echo "RESULT=NOT_REVIEWED reason=quota fallback=coderabbit"
+          exit 0
+        fi
+        # ONLY THE QUOTA CASE IS TERMINAL. Every other non-verdict body is a
+        # state a later review can supersede -- an object posted mid-run, a
+        # format not yet recognised, a message that is about to be replaced --
+        # and exiting on first sight forfeits the review that was coming.
+        # Raised by CodeRabbit on lorenzini#3, and it is the same mistake as
+        # treating a skip notice as terminal, which the sibling script was fixed
+        # for in this very commit. The quota message is different in kind: it
+        # states that nothing will be reviewed, not that nothing has been yet.
+        #
+        # The information is not lost at the deadline. not_reviewed=1 makes the
+        # timeout report NOT_REVIEWED with this body rather than TIMEOUT, so a
+        # body that never becomes a verdict still ends as "nothing said the code
+        # was read" instead of "the verdict may still arrive".
+        not_reviewed=1
+        not_reviewed_body="$body"
+        echo "Not treating this as final: a later review can replace it. Polling on."
+        clean_seen=0
+        sleep "$INTERVAL"
+        continue
       fi
+      not_reviewed=0
 
       echo "Copilot reviewed the current commit and left no inline comments."
       printf '%s\n' "$body" | head -1 | sed 's/^/Review body says: /'
@@ -543,5 +592,16 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   sleep "$INTERVAL"
 done
 
+if [ "${not_reviewed:-0}" = "1" ]; then
+  echo "Copilot's last review of ${HEAD:0:7} never carried a verdict body, and the deadline"
+  echo "passed with it still that way. Reported as NOT_REVIEWED rather than TIMEOUT: the"
+  echo "difference is that a timeout says the verdict may still arrive, and this one says"
+  echo "the reviewer answered with something that is not one."
+  echo "------------------------------------------------------------"
+  printf '%s\n' "$not_reviewed_body"
+  echo "------------------------------------------------------------"
+  echo "RESULT=NOT_REVIEWED"
+  exit 0
+fi
 echo "RESULT=TIMEOUT (no Copilot review of ${HEAD:0:7} in ${TIMEOUT}s; it may be slow, out of quota, or not enabled for this account)"
 exit 0

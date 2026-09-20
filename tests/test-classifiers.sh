@@ -222,6 +222,30 @@ d=$(mktemp -d); printf '#!/bin/sh\nexit 1\n' > "$d/gh"; chmod +x "$d/gh"
 ( PATH="$d:$PATH"; rate_limited >/dev/null ); ok "unreadable limit endpoint is not a limit" "0" "$?"
 rm -rf "$d"
 
+# --- a skip or pause notice is not terminal on first sight ---
+# NyanCogs#33: the skip notice and the in-progress notice are the SAME comment
+# object, rewritten in place 13 seconds later. A poller reading it inside that
+# window exited with "review skipped" about a run that was starting. Two
+# independent signals keep the poll alive; either alone would have.
+_note() { # _note <created> <updated> <extra-comment-json>
+  printf '[[{"user":{"login":"coderabbitai[bot]"},"created_at":"%s","updated_at":"%s","body":"Review skipped"}%s]]' "$1" "$2" "$3"
+}
+mutated=$(_note "2026-09-20T18:03:31Z" "2026-09-20T18:03:44Z" "")
+ok "an edited notice is flagged as mutated" "yes" \
+   "$(printf '%s' "$mutated" | notice_mutated)"
+
+untouched=$(_note "2026-09-20T18:03:31Z" "2026-09-20T18:03:31Z" "")
+ok "an untouched notice is not mutated" "no" \
+   "$(printf '%s' "$untouched" | notice_mutated)"
+
+# The second signal: a trigger created at or after the notice.
+triggered=$(_note "2026-09-20T18:03:31Z" "2026-09-20T18:03:31Z" ',{"user":{"login":"Nanako0129"},"created_at":"2026-09-20T18:03:32Z","updated_at":"2026-09-20T18:03:32Z","body":"@coderabbitai review"}')
+ok "a trigger after the notice is seen" "1" \
+   "$(printf '%s' "$triggered" | triggers_since "2026-09-20T18:03:31Z")"
+
+ok "no trigger means none is counted" "0" \
+   "$(printf '%s' "$untouched" | triggers_since "2026-09-20T18:03:31Z")"
+
 # --- pipefail: a paginated read that dies after page 1 must not look complete ---
 # Without it the pipeline takes jq's status, and jq -s builds a valid PARTIAL
 # array from the pages that did arrive.
