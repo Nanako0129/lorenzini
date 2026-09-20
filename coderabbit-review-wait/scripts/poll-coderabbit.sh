@@ -169,6 +169,32 @@ dispositioned_ids() { jq -r "$DISPOSITIONED_JQ" 2>/dev/null; }
 # GraphQL reviewThreads payload on stdin -> count of resolved-without-human-reply threads
 unreplied_resolved() { jq -r "$UNREPLIED_JQ" 2>/dev/null; }
 
+# Reviews payload on stdin -> one "state login" line per FOREIGN review at $1.
+#
+# ONE definition, called by the poll loop and by tests/test-classifiers.sh. The
+# test used to carry its own copy of this jq program, so a change to the
+# found/clean/unknown precedence would have left every assertion passing -- the
+# same duplicate-under-test failure that let a widened pattern through a
+# mutation run earlier, which is why FOREIGN_BODY_RE became a constant. A
+# constant is not enough when the logic around it is also duplicated.
+#
+# found > clean > unknown: a body carrying both a finding marker and
+# "Findings: None" is reporting a finding, and the safe reading of a
+# contradictory body is the stricter one. Anything not positively clean
+# withholds the pass, so an unrecognised format cannot pass as clean.
+classify_foreign() { # classify_foreign <head-sha> <owned-logins-json>
+  jq -r --arg h "$1" --argjson owned "$2" \
+        --arg found "$FOREIGN_BODY_RE" --arg clean "$FOREIGN_CLEAN_RE" '
+    [.[][] | select(.commit_id == $h)
+     | select((.user.type // "") == "Bot")
+     | (.user.login // "") as $l | select(($owned | index($l)) | not)
+     | (.body // "") as $b
+     | if   ($b | test($found)) then "found   \($l)"
+       elif ($b | test($clean)) then "clean   \($l)"
+       else                          "unknown \($l)  (format this gate does not recognise -- states neither findings nor their absence)"
+       end] | .[]' 2>/dev/null
+}
+
 # ---------------------------------------------------------------------------
 # Jev shadow check (opt-in, JEV_SHADOW=1). Classifies every collapsed <details>
 # heading in the review body: "does this section list work a maintainer still
@@ -719,17 +745,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
     # found > clean > unknown, in that order: a body carrying both a finding
     # marker and "Findings: None" is reporting a finding, and the safe reading
     # of a contradictory body is the stricter one.
-    fclass=$(printf '%s\n' "$reviews" | jq -r \
-      --arg h "$HEAD" --arg found "$FOREIGN_BODY_RE" --arg clean "$FOREIGN_CLEAN_RE" \
-      --argjson owned '["coderabbitai[bot]"]' '
-      [.[][] | select(.commit_id == $h)
-       | select((.user.type // "") == "Bot")
-       | (.user.login // "") as $l | select(($owned | index($l)) | not)
-       | (.body // "") as $b
-       | if   ($b | test($found)) then "found   \($l)"
-         elif ($b | test($clean)) then "clean   \($l)"
-         else                          "unknown \($l)  (format this gate does not recognise -- states neither findings nor their absence)"
-         end] | .[]' 2>/dev/null)
+    fclass=$(printf '%s\n' "$reviews" | classify_foreign "$HEAD" '["coderabbitai[bot]"]')
     # Anything that is not positively clean withholds the pass.
     fbody_hits=$(printf '%s\n' "$fclass" | grep -E '^(found|unknown)' || true)
     n_fbody=$(printf '%s\n' "$fbody_hits" | grep -c '[^[:space:]]') || true

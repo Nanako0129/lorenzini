@@ -22,6 +22,16 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 TAU = 0.5
 
 repeats = int(sys.argv[1]) if len(sys.argv) > 1 else 3
+# A single pass CANNOT flip, so a one-repeat run reports flip_rate 0/N by
+# arithmetic rather than by measurement -- and then writes it into a result file
+# that looks like every other one. That is not hypothetical: a one-repeat
+# verification run overwrote the committed three-repeat v3 baseline and its
+# "0/30" was believed for a while. The exclusive-open guard below stops the
+# overwrite; this stops the meaningless number being produced at all, which is
+# the half that guard never addressed.
+if repeats < 2:
+    sys.exit(f"repeats is {repeats}; flip rate needs at least 2 runs to mean anything. "
+             "A single pass cannot flip, so it would report 0/N by arithmetic.")
 qfile = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else ROOT / "coderabbit-review-wait/jev-questions-v3.json"
 
 spec = json.load(open(qfile))

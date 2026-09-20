@@ -160,19 +160,22 @@ done
 # blob: review bodies contain newlines so "one line per review" was never true,
 # and one body matching the clean pattern marked the whole aggregate clean,
 # masking a second unrecognised review posted after it.
-classify_reviews() { # <reviews-json> -> one "state login" line per foreign review
-  jq -r --arg h "HEAD1" --arg found "$FOREIGN_BODY_RE" --arg clean "$FOREIGN_CLEAN_RE" \
-        --argjson owned '["coderabbitai[bot]"]' '
-    [.[][] | select(.commit_id == $h)
-     | select((.user.type // "") == "Bot")
-     | (.user.login // "") as $l | select(($owned | index($l)) | not)
-     | (.body // "") as $b
-     | if ($b | test($found)) then "found \($l)" elif ($b | test($clean)) then "clean \($l)" else "unknown \($l)" end] | .[]'
-}
+# The production classifier, called rather than reimplemented. The first
+# version of this block defined its own jq program, so a change to the
+# found/clean/unknown precedence in the poller would have left every assertion
+# below passing -- the duplicate-under-test failure this repository has now hit
+# three times, most recently with a regex that a mutation run walked straight
+# past because the assertion held a copy of it.
+classify_reviews() { classify_foreign "HEAD1" '["coderabbitai[bot]"]'; }
 masking='[[{"commit_id":"HEAD1","user":{"login":"Copilot","type":"Bot"},"body":"Findings: None"},
            {"commit_id":"HEAD1","user":{"login":"other-bot","type":"Bot"},"body":"a format nobody has seen"}]]'
-ok "a clean foreign review does not mask an unknown one" "clean Copilot
-unknown other-bot" "$(printf '%s' "$masking" | classify_reviews)"
+# The expected strings are the production ones, spacing included. The first
+# version of this assertion carried its own formatting and passed against its
+# own jq program; pointing it at the real classifier failed immediately, which
+# is the duplicate having already drifted.
+ok "a clean foreign review does not mask an unknown one" "clean   Copilot
+unknown other-bot  (format this gate does not recognise -- states neither findings nor their absence)" \
+   "$(printf '%s' "$masking" | classify_reviews)"
 
 owned_only='[[{"commit_id":"HEAD1","user":{"login":"coderabbitai[bot]","type":"Bot"},"body":"anything"}]]'
 ok "the gate's own review is not foreign" "" "$(printf '%s' "$owned_only" | classify_reviews)"
@@ -181,7 +184,7 @@ other_head='[[{"commit_id":"HEAD0","user":{"login":"Copilot","type":"Bot"},"body
 ok "a foreign review on another commit is not at head" "" "$(printf '%s' "$other_head" | classify_reviews)"
 
 contradictory='[[{"commit_id":"HEAD1","user":{"login":"Copilot","type":"Bot"},"body":"Findings: None\nSuppressed comments (2)"}]]'
-ok "a contradictory body reads as found, not clean" "found Copilot" "$(printf '%s' "$contradictory" | classify_reviews)"
+ok "a contradictory body reads as found, not clean" "found   Copilot" "$(printf '%s' "$contradictory" | classify_reviews)"
 
 # --- pipefail: a paginated read that dies after page 1 must not look complete ---
 # Without it the pipeline takes jq's status, and jq -s builds a valid PARTIAL
