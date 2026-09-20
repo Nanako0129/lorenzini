@@ -40,7 +40,7 @@ Each skill polls until a definitive verdict is recorded against the current head
 | `RESULT=CLEAN` | Gate passed. Safe to merge. | Merge the pull request. |
 | `RESULT=SUGGESTIONS count=N` | N inline findings on head, or `CHANGES_REQUESTED`. | Resolve or reply before merging. |
 | `RESULT=NITPICKS count=N` | Otherwise clean, but N findings—or N skipped, unread files—sit in a collapsed body section that the reviewer's own count ignores. | Not a pass. A file that was never read means a zero count over it proves nothing. Disposition each, push, and re-poll. |
-| `RESULT=PREMERGE count=N` | Otherwise clean, but N pre-merge checks failed. The failure appears only in the summary tally, not in the row status cell. | Not a pass. Often a legitimate defer—a coverage threshold counts every function touched by the diff, not just added ones. Disposition each. |
+| `RESULT=PREMERGE count=N` | Otherwise clean, but N pre-merge checks failed. The reliable count is the `✅ N | ❌ M` tally and the section heading; an individual row's status cell reads `⚠️ Warning`, so a parser hunting `❌` inside the rows finds nothing and reports a pass. | Not a pass. Often a legitimate defer—a coverage threshold counts every function touched by the diff, not just added ones. Disposition each. |
 | `RESULT=MISCOUNT claimed=N counted=M` | The reviewer's own claimed count exceeds what this gate arrived at. | Not a pass. The gap itself is the finding: posted content is not being counted. |
 | `RESULT=UNREPLIED count=N` | N resolved threads carry no human reply. | Not a pass. `@coderabbitai resolve` closes every thread at once, leaving no record of decisions. Reply with dispositions, then resolve. |
 | `RESULT=OTHERBOT` | This gate is clean, but the pull request carries undispositioned findings from a reviewer it cannot read—either an unresolved thread or a finding inside that reviewer's own review body that generates no thread. | Not a pass. Clean here only proves that *one* reviewer found nothing. Open the pull request and read what the secondary bot reported. |
@@ -108,8 +108,8 @@ Configuration:
 Jev produces four distinct outputs, kept deliberately distinguishable:
 - `(jev: unavailable -- ...)`: Did not run. Missing API keys, network timeouts, HTTP errors, or a missing question file.
 - `(jev: INCOMPLETE -- M of N heading(s) came back without a usable score)`: Ran, but responses were partial or non-numeric. This is not a complete check; subsequent lines cover only headings that returned usable scores.
-- `(jev: checked X of N heading(s), nothing the patterns missed)`: Ran completely; Jev found nothing that standard regex patterns missed.
-- `(jev: would HOLD -- ...)`: Ran completely; Jev identified an unhandled heading that regex patterns missed.
+- `(jev: checked X of N heading(s), nothing the patterns missed)`: Jev found nothing the patterns had missed. `X` is the number of headings that came back with a usable score, so this line can follow `INCOMPLETE` and then covers only those.
+- `(jev: would HOLD -- ...)`: Jev identified a heading the patterns do not know. This line can also follow `INCOMPLETE`, on the headings that answered.
 
 Collapsing the first three outputs into the same silence is the exact failure documented across most of the ledger. The `INCOMPLETE` state exists because the very first version of this classifier script made that exact error: partial API responses generated an empty flags list, which the script reported as "nothing missed."
 

@@ -40,7 +40,7 @@ gh api repos/OWNER/NAME -q .stargazers_count
 | `RESULT=CLEAN` | 閘門達成，可以合併。 | 合併 PR。 |
 | `RESULT=SUGGESTIONS count=N` | head 上有 N 條 inline findings，或 `CHANGES_REQUESTED`。 | 合併前必須先處理或回覆。 |
 | `RESULT=NITPICKS count=N` | 其餘乾淨，但有 N 條 findings，或 N 個被略過未讀的檔案，收在摺疊區塊裡。 | 不算通過。沒被讀過的檔案，零計數什麼都不代表。逐條處置後再推一次、重新輪詢。 |
-| `RESULT=PREMERGE count=N` | 其餘乾淨，但 N 項 pre-merge 檢查失敗。失敗只出現在總計欄，列狀態那格看不到。 | 不算通過。常常是合理的 defer──覆蓋率門檻算的是 diff 碰到的所有函式，不是新增的那些。逐項處置。 |
+| `RESULT=PREMERGE count=N` | 其餘乾淨，但 N 項 pre-merge 檢查失敗。可靠的數字是 `✅ N | ❌ M` 這行總計和區塊標題；個別列的狀態那格寫的是 `⚠️ Warning`，所以在列裡面找 `❌` 的解析器什麼都找不到，然後回報通過。 | 不算通過。常常是合理的 defer──覆蓋率門檻算的是 diff 碰到的所有函式，不是新增的那些。逐項處置。 |
 | `RESULT=MISCOUNT claimed=N counted=M` | 審查工具自己報的數字比閘門數到的多。 | 不算通過。差距本身就是 finding：它貼出來的東西有一部分沒被算到。 |
 | `RESULT=UNREPLIED count=N` | N 條已標記解決的討論串沒有人類回覆。 | 不算通過。`@coderabbitai resolve` 會一次關掉全部，留下無人說明的處置紀錄。先寫下處置理由再 resolve。 |
 | `RESULT=OTHERBOT` | 這個閘門乾淨，但 PR 上有它讀不到的 reviewer 留下未處置的 findings──可能是未解決討論串，也可能藏在那個 reviewer 自己的 review 內文裡、不產生討論串。 | 不算通過。這裡的乾淨只代表那一個 reviewer 沒找到東西。打開 PR 讀另一個工具說了什麼。 |
@@ -108,8 +108,8 @@ Jev 預設關閉，且目前不改變任何裁決。透過 `JEV_SHADOW=1` 啟用
 Jev 提供四種刻意區隔的輸出訊號：
 - `(jev: unavailable -- ...)`：未執行。缺少 API 金鑰、網路逾時、HTTP 錯誤，或問題集檔案遺失。
 - `(jev: INCOMPLETE -- M of N heading(s) came back without a usable score)`：已執行，但部分回應遺失或非數值。這不是完整檢查；後續訊息僅涵蓋有成功回傳分數的標題。
-- `(jev: checked X of N heading(s), nothing the patterns missed)`：執行完畢；Jev 沒找到正則模式漏掉的事項。
-- `(jev: would HOLD -- ...)`：執行完畢；Jev 發現了現有正則模式不認識的新標題。
+- `(jev: checked X of N heading(s), nothing the patterns missed)`：Jev 沒找到 patterns 漏掉的東西。`X` 是拿到可用分數的標題數，所以這行可能跟在 `INCOMPLETE` 後面，那時它只涵蓋那些有回答的。
+- `(jev: would HOLD -- ...)`：Jev 發現一個 patterns 不認識的標題。這行同樣可能跟在 `INCOMPLETE` 後面，只針對有回答的標題。
 
 把前三種輸出摺疊成同一種沉默，就是帳本大部分在講的那種錯誤。`INCOMPLETE` 狀態之所以存在，正是因為這支分類器腳本的第一版就犯過這個錯：部分 API 回應產生了空的旗標清單，程式隨後回報什麼都沒漏。
 
@@ -148,7 +148,3 @@ bash tests/test-classifiers.sh
 這份帳本不是附錄，而是這套工具值不值得信任的誠實依據：裡面的每一筆紀錄，都是本專案某個早期版本不該印出 `CLEAN` 卻誤判放行的時刻。最早的一筆發生在 2026-09-17（`Nanako0129/coralline#85`）：登入過濾條件未能比對到 Copilot 兩個登入帳號的其中一個，在帶有 3 條具體問題的 PR 上誤報 `CLEAN`。
 
 輪詢腳本所體現的各種防禦性邏輯，若脫離了當初迫使它們成型的失敗背景，往往顯得武斷。一道理由被遺忘的防護措施，遲早會被下一位修改程式碼的人當成多餘的雜物隨手刪除。
-
----
-
-```text
