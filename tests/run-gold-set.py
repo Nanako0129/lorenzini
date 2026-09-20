@@ -16,7 +16,7 @@ direction is to run this and compare against the recorded baselines in
 tests/fixtures/. Write a NEW result file per variant; overwriting an old one
 destroys the comparison that makes the next edit judgeable.
 """
-import json, os, pathlib, statistics, subprocess, sys
+import json, os, pathlib, statistics, subprocess, sys, time
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TAU = 0.5
@@ -92,11 +92,31 @@ out = {"round": f"{spec.get('_model', 'jev-1.13.0')}-{variant}", "family": "CR-l
 # three-repeat v3 result, and its "0/30 flip rate" then meant nothing, because a
 # single pass cannot flip. A contract stated in a docstring and contradicted by
 # the function under it is not a contract.
-p = ROOT / f"tests/fixtures/result-cr-labels-{out['round']}.json"
-if p.exists():
-    alt = p.with_name(p.stem + f"-r{repeats}-{int(__import__('time').time())}.json")
-    print(f"\n{p.name} exists and is not being touched.")
-    print(f"Writing {alt.name} instead. Compare them, then keep whichever you mean to keep.")
-    p = alt
-json.dump(out, open(p, "w"), ensure_ascii=False, indent=1)
+#
+# The exclusive "x" mode is what enforces it, not the exists() check that used
+# to guard a plain "w". Two mechanisms defeated that: a second run starting in
+# the same whole second produced an identical alternate name and the later
+# open(..., "w") overwrote the earlier alternate, and exists() followed by a
+# separate open is a check that can go stale between the two lines. "x" moves
+# the decision into the one syscall that can actually refuse, so the only way
+# to lose a recorded result is to delete it on purpose. Raised by CodeRabbit on
+# lorenzini#2 against the alternate path; the primary path had it too.
+base = ROOT / f"tests/fixtures/result-cr-labels-{out['round']}.json"
+stamp = int(time.time())
+p, note = base, None
+for suffix in range(64):
+    try:
+        fh = open(p, "x")
+        break
+    except FileExistsError:
+        if note is None:
+            note = base.name
+        p = base.with_name(f"{base.stem}-r{repeats}-{stamp}{'' if suffix == 0 else f'-{suffix}'}.json")
+else:
+    sys.exit(f"could not find an unused name next to {base.name} after 64 tries")
+if note:
+    print(f"\n{note} exists and is not being touched.")
+    print(f"Writing {p.name} instead. Compare them, then keep whichever you mean to keep.")
+with fh:
+    json.dump(out, fh, ensure_ascii=False, indent=1)
 print("\n" + json.dumps(out["score"], ensure_ascii=False), "\n->", p)

@@ -136,7 +136,16 @@ jev_shadow() {
     | grep -oE '<summary>.*</summary>' \
     | sed -E 's#</?summary>##g; s/<[^>]*>//g' \
     | sed -E 's/^[[:space:]]+|[[:space:]]+$//g' \
-    | grep -vE '^$' | sort -u)
+    | grep -vE '^$')
+  # NO `sort -u` HERE. It was, and it collapsed two distinct <details> sections
+  # that happen to share a <summary> into one entry -- so only the first was
+  # sent to the classifier, $n undercounted the sections, and the run then
+  # printed "checked N of N heading(s)" over a section it never looked at.
+  # Deduplicating the input to a COUNTING gate turns a duplicate into an
+  # absence, which is this repository's one recurring bug wearing a new hat.
+  # Found by Copilot on lorenzini#2, in the poller for the other reviewer.
+  # Document order is kept too: the flagged list now reads in the order a
+  # person scrolling the review body would meet the sections.
   [ -n "$headings" ] || { echo "(jev: nothing to check -- no collapsed sections in this body)"; return 0; }
   n=$(printf '%s\n' "$headings" | wc -l | tr -d ' ')
 
@@ -210,6 +219,15 @@ EOF
     # the score and where it came from. This file is the only way the two-week
     # shadow period produces anything; without it the run is just noise on a
     # terminal that nobody re-reads.
+    #
+    # THE APPEND IS CHECKED. scripts/jev.sh states the rule -- a failed append
+    # must be loud, because a caller that reports "recorded" over a write that
+    # did not happen is the same absence-read-as-success this repository exists
+    # to stop -- and this call site, the other home of that same contract, did
+    # not honour it. An unwritable or missing parent directory lost the only
+    # persistent record of a would-HOLD while the terminal still printed the
+    # candidate, so a two-week shadow period could end with an empty log and no
+    # sign anything was wrong. Found by Copilot on lorenzini#2.
     while IFS= read -r line; do
       [ -n "$line" ] || continue
       printf '%s' "$line" | awk -v repo="$REPO" -v pr="$PR" -v head="$HEAD" '
@@ -221,7 +239,8 @@ EOF
             '{ts:$ts, repo:$repo, pr:($pr|tonumber), head:$head, model:$model,
                qset_hash:$qh,
                noul:($noul|tonumber), label:$label, verdict_without_jev:"CLEAN", adjudicated:null}' \
-            >> "$shadow_log"
+            >> "$shadow_log" \
+            || echo "(jev: could not append to $shadow_log -- this would-HOLD is NOT recorded)"
         done
     done <<SHADOWEOF
 $flagged
