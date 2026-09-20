@@ -29,16 +29,44 @@ reviewer said about it.
 
 ## Install
 
-Symlink into `~/.claude/skills/`:
+Clone at a tag and symlink into `~/.claude/skills/`:
 
 ```bash
-git clone git@github.com:Nanako0129/lorenzini.git ~/side-project/lorenzini
+git clone https://github.com/Nanako0129/lorenzini.git ~/side-project/lorenzini
+cd ~/side-project/lorenzini && git checkout v0.2.0
 for s in codex copilot coderabbit; do
   ln -s ~/side-project/lorenzini/$s-review-wait ~/.claude/skills/$s-review-wait
 done
 ```
 
 Requires `gh` (authenticated) and `jq`.
+
+**Pin to a tag, not to `main`.** These skills decide whether a pull request may
+merge, `main` is where each newly found fail-open is fixed, and a symlinked
+checkout changes the gate the moment you `git pull`. Update deliberately:
+
+```bash
+cd ~/side-project/lorenzini && git fetch --tags && git checkout v0.2.0
+```
+
+The symlinks keep working — they point at directories, not commits.
+
+### Versions
+
+| Tag | Use it? |
+|---|---|
+| `v0.2.0` | Yes. |
+| `v0.1.1` | Superseded. Missing the cross-reviewer, non-review and format-recognition guards below. |
+| `v0.1.0` | **No.** Four gates in it report a pass where none was earned. |
+
+If you cloned before 2026-09-20 you are on `main` at whatever it was that day,
+which is somewhere in the `v0.1.x` range. `git log --oneline -1` against the
+tags above will say where.
+
+Every fail-open found so far, with the pull request that produced it, is in
+[`docs/fail-open-ledger.md`](docs/fail-open-ledger.md). It is the honest
+description of how much to trust a `RESULT=CLEAN`: each entry is a case where an
+earlier version of this code printed one and should not have.
 
 ## The optional Jev shadow check
 
