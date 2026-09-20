@@ -49,27 +49,86 @@ Each skill polls until a definitive verdict is recorded against the current head
 | `RESULT=TIMEOUT` | Head did not receive a verdict within the polling deadline. | Gate held. Never treat a timeout as approval. |
 | `RESULT=ERROR ...` | Polling cannot resolve this state: draft PRs, paused or skipped reviews, exhausted GitHub API rate limits, or an unresolvable repository/PR. | Fix the precondition. Rate limits report their reset time directly rather than polling to the deadline. |
 
-## Installation and checkout hazards
+## Install
 
-Clone at a release tag and create symlinks in `~/.claude/skills/`:
+These are portable [Agent Skills](https://agentskills.io/specification): one canonical `SKILL.md` per reviewer under `skills/`, no per-platform forks. Every command below installs at **user scope** — once, for every project.
+
+Requires an authenticated `gh` CLI and `jq`.
+
+### Any agent (Skills CLI)
+
+```bash
+npx skills add Nanako0129/lorenzini -g     # -g = user scope
+npx skills update lorenzini -g
+npx skills remove lorenzini -g
+```
+
+### Claude Code
+
+```bash
+claude plugin marketplace add Nanako0129/lorenzini
+claude plugin install lorenzini@lorenzini --scope user
+
+# update
+claude plugin marketplace update lorenzini
+claude plugin update lorenzini
+```
+
+### Codex
+
+```bash
+codex plugin marketplace add Nanako0129/lorenzini
+codex plugin add lorenzini@lorenzini
+
+# update — refresh the snapshot, then re-add
+codex plugin marketplace upgrade lorenzini
+codex plugin add lorenzini@lorenzini
+```
+
+### Antigravity
+
+```bash
+agy plugin install https://github.com/Nanako0129/lorenzini
+```
+
+### Grok Build
+
+```bash
+grok plugin install Nanako0129/lorenzini --trust
+grok plugin update
+```
+
+### QwenPaw
+
+```bash
+git clone https://github.com/Nanako0129/lorenzini
+qwenpaw plugin install ./lorenzini/.qwenpaw-plugin
+qwenpaw plugin uninstall lorenzini
+```
+
+> **What "installs" means here.** The packaging was exercised to the point that each manifest parses and the skills resolve. Whether every host then loads and runs them as documented has not been checked platform by platform, and the QwenPaw entry point has not been run at all — no QwenPaw install was available. File an issue if your agent trips on it.
+
+### From a clone, pinned to a tag
+
+The manual route, and the one to use if you want the gate to change only when you say so:
 
 ```bash
 git clone https://github.com/Nanako0129/lorenzini.git ~/side-project/lorenzini
 cd ~/side-project/lorenzini && git checkout v0.2.1
 for s in codex copilot coderabbit; do
-  ln -s ~/side-project/lorenzini/$s-review-wait ~/.claude/skills/$s-review-wait
+  ln -s ~/side-project/lorenzini/skills/$s-review-wait ~/.claude/skills/$s-review-wait
 done
 ```
 
-This setup requires an authenticated `gh` CLI and `jq`.
+> **Upgrading from v0.2.1 or earlier breaks this symlink.** The three skill directories moved from the repository root into `skills/` so the package can be installed by the tools above. A clone that pulls past that point leaves the old symlinks dangling, and a dangling skill symlink does not announce itself — the skill is simply gone. Re-run the loop above, or switch to one of the package installs.
 
-Pin symlinks to a release tag, never to `main`. Because these skills govern merge safety and `main` is where newly caught fail-opens are patched, running on `main` means an ordinary `git pull` silently changes your gate logic. Symlinks target directory paths rather than commits. Update deliberately:
+Pin to a tag, never to `main`. These skills govern merge safety and `main` is where each newly caught fail-open is patched, so on `main` an ordinary `git pull` changes your gate. Symlinks target directories rather than commits, so they survive:
 
 ```bash
 git fetch --tags && git checkout v0.2.1
 ```
 
-If you develop inside `lorenzini`, your checked-out branch is your active gate. On 2026-09-20, running the same poller on the same pull request minutes apart produced `RESULT=CLEAN` on one branch and `RESULT=NOT_REVIEWED` on another—evaluating a review body that stated the source files were never read.
+If you develop inside `lorenzini`, your checked-out branch **is** your active gate. On 2026-09-20, the same poller on the same pull request minutes apart produced `RESULT=CLEAN` from one branch and `RESULT=NOT_REVIEWED` from another — over a review body stating the source files were never read.
 
 ## Version support
 

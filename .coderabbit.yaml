@@ -22,7 +22,7 @@ reviews:
     auto_pause_after_reviewed_commits: 0
 
   path_instructions:
-    - path: "*/scripts/poll-*.sh"
+    - path: "skills/*/scripts/poll-*.sh"
       instructions: |
         These decide whether a third-party reviewer's verdict means pass. The
         rule the whole repository turns on: NEVER INFER A PASS FROM ABSENCE. A
@@ -55,7 +55,7 @@ reviews:
         instead; and without --paginate the reviews endpoint caps at 30, which
         hides the newest review on a long pull request.
 
-    - path: "coderabbit-review-wait/jev-questions-*.json"
+    - path: "skills/coderabbit-review-wait/jev-questions-*.json"
       instructions: |
         The criteria text IS the classifier. v1 missed "Nitpick comments" at
         0.37 only because the word "nitpick" was absent, and one added sentence
@@ -68,7 +68,7 @@ reviews:
         strings it is trying to fix rather than the category they belong to --
         that is fitting to the gold set rather than stating a policy.
 
-    - path: "{scripts/jev.sh,tests/run-gold-set.py}"
+    - path: "{skills/coderabbit-review-wait/scripts/jev.sh,tests/run-gold-set.py}"
       instructions: |
         The credential must never reach an argument vector: an argv is readable
         through ps by every local account for the duration of the call. It goes
@@ -94,4 +94,4 @@ knowledge_base:
     filePatterns:
       - "README.md"
       - "docs/fail-open-ledger.md"
-      - "*/SKILL.md"
+      - "skills/*/SKILL.md"

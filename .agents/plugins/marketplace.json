@@ -1,0 +1,16 @@
+{
+  "name": "lorenzini",
+  "interface": {
+    "displayName": "Lorenzini"
+  },
+  "plugins": [
+    {
+      "name": "lorenzini",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "category": "Development"
+    }
+  ]
+}

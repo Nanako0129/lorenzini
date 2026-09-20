@@ -1,0 +1,21 @@
+{
+  "id": "lorenzini",
+  "name": "lorenzini",
+  "version": "0.2.1",
+  "type": "general",
+  "description": "Wait for a third-party PR reviewer and adjudicate whether its verdict actually means pass: three skills (coderabbit-review-wait, copilot-review-wait, codex-review-wait) and a /lorenzini slash command.",
+  "description_i18n": {
+    "zh-TW": "等第三方 PR reviewer 審完，再判斷那個結果算不算通過：三個 skill（coderabbit-review-wait、copilot-review-wait、codex-review-wait）附 /lorenzini 斜線指令。",
+    "zh-CN": "等第三方 PR reviewer 审完，再判断那个结果算不算通过：三个 skill（coderabbit-review-wait、copilot-review-wait、codex-review-wait）附 /lorenzini 斜杠命令。",
+    "en-US": "Wait for a third-party PR reviewer and adjudicate whether its verdict actually means pass: three skills (coderabbit-review-wait, copilot-review-wait, codex-review-wait) and a /lorenzini slash command."
+  },
+  "author": "Nanako Tsai",
+  "entry": {
+    "backend": "plugin.py"
+  },
+  "dependencies": [],
+  "qwenpaw_version": {
+    "min": "2.1.0",
+    "max": "2.99.0"
+  }
+}

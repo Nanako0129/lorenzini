@@ -144,6 +144,18 @@ bash <skill-dir>/scripts/poll-copilot.sh [PR_NUMBER] [--repo OWNER/NAME] [--time
 
 Use `run_in_background: true`. `PR_NUMBER` is optional (defaults to the current branch's PR).
 
+> **If that command fails with `No such file or directory` and exit 127**, the
+> skill directory this file was loaded from does not contain the script. The
+> usual cause is a stale symlink: the three skill directories moved from the
+> repository root into `skills/` in v0.2.2, so a `~/.claude/skills/` symlink
+> created before that points at a path which no longer exists. A dangling skill
+> symlink does not announce itself — `ls` still lists the name and the skill
+> still appears in the loaded set, because the link itself is intact. Re-create
+> it against `skills/<name>` (see the repository README) or reinstall the
+> package. It fails closed: the script never ran, so no verdict was produced and
+> nothing can have been passed on one.
+
+
 **Resolving the repo:** the script auto-detects the repo from the current directory — but only when that is the target git repo. Do **not** `cd` into the skill dir to run it. If your working directory is not the repo, pass **`--repo OWNER/NAME`** (or export `GH_REPO`).
 
 **Requesting manually** (what `--request` does, if you need it by hand): the `[bot]` suffix is mandatory; without it the API returns 422 *"Reviews may only be requested from collaborators"*.

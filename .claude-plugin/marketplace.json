@@ -1,0 +1,14 @@
+{
+  "name": "lorenzini",
+  "owner": {
+    "name": "Nanako Tsai"
+  },
+  "description": "Three Claude Code skills that wait for a third-party pull-request reviewer and adjudicate whether its verdict actually means pass. They do not review code; they decide what the reviewer said about it.",
+  "plugins": [
+    {
+      "name": "lorenzini",
+      "source": "./",
+      "description": "Installs coderabbit-review-wait, copilot-review-wait and codex-review-wait. Pick the one that covers the repository you are in; the three define a clean pass differently."
+    }
+  ]
+}

@@ -49,27 +49,86 @@ gh api repos/OWNER/NAME -q .stargazers_count
 | `RESULT=TIMEOUT` | head 在時限內沒有 verdict。 | 閘門扣住，絕不將超時當作通過。 |
 | `RESULT=ERROR ...` | 輪詢解決不了的狀態：草稿 PR、審查被暫停或跳過、GitHub API 配額耗盡、無法解析 repo/PR。 | 修正前置條件。配額耗盡會直接指出重置時間，不會一路輪詢到逾時。 |
 
-## 安裝與簽出風險
+## 安裝
 
-請 clone 指定的 release tag，並在 `~/.claude/skills/` 建立符號連結：
+這三個 skill 是可攜的 [Agent Skill](https://agentskills.io/specification)：每個 reviewer 一份 canonical `SKILL.md` 放在 `skills/` 底下，不為個別平台分叉。以下每一種安裝都是 **user scope**，裝一次、每個專案都能用。
+
+環境需要已登入的 `gh` 與 `jq`。
+
+### 任何 agent（Skills CLI）
+
+```bash
+npx skills add Nanako0129/lorenzini -g     # -g 是 user scope
+npx skills update lorenzini -g
+npx skills remove lorenzini -g
+```
+
+### Claude Code
+
+```bash
+claude plugin marketplace add Nanako0129/lorenzini
+claude plugin install lorenzini@lorenzini --scope user
+
+# 更新
+claude plugin marketplace update lorenzini
+claude plugin update lorenzini
+```
+
+### Codex
+
+```bash
+codex plugin marketplace add Nanako0129/lorenzini
+codex plugin add lorenzini@lorenzini
+
+# 更新——先刷新快照再重新加入
+codex plugin marketplace upgrade lorenzini
+codex plugin add lorenzini@lorenzini
+```
+
+### Antigravity
+
+```bash
+agy plugin install https://github.com/Nanako0129/lorenzini
+```
+
+### Grok Build
+
+```bash
+grok plugin install Nanako0129/lorenzini --trust
+grok plugin update
+```
+
+### QwenPaw
+
+```bash
+git clone https://github.com/Nanako0129/lorenzini
+qwenpaw plugin install ./lorenzini/.qwenpaw-plugin
+qwenpaw plugin uninstall lorenzini
+```
+
+> **「可以安裝」在這裡的意思。** 打包驗到每份 manifest 都能解析、skill 路徑都解得開為止。各平台載入之後是否照文件運作，沒有逐一驗證；QwenPaw 的進入點完全沒跑過，因為手邊沒有可用的 QwenPaw。你的 agent 卡住的話請開 issue。
+
+### 從 clone 安裝並固定在 tag
+
+手動路線，也是「閘門只在你說了才變」的那條路：
 
 ```bash
 git clone https://github.com/Nanako0129/lorenzini.git ~/side-project/lorenzini
 cd ~/side-project/lorenzini && git checkout v0.2.1
 for s in codex copilot coderabbit; do
-  ln -s ~/side-project/lorenzini/$s-review-wait ~/.claude/skills/$s-review-wait
+  ln -s ~/side-project/lorenzini/skills/$s-review-wait ~/.claude/skills/$s-review-wait
 done
 ```
 
-環境需要已登入的 `gh` 與 `jq`。
+> **從 v0.2.1 或更早版本升上來，這個符號連結會斷。** 三個 skill 目錄從 repo 根目錄搬進了 `skills/`，這樣上面那些工具才裝得起來。pull 過那個點之後，舊的符號連結就懸空了——而**懸空的 skill 符號連結不會告訴你它壞了**，那個 skill 只是消失。請重跑上面那個迴圈，或改用上面任一種套件安裝。
 
-符號連結請固定在 release tag，不要對齊 `main`。這些 skill 決定了 PR 能否合併，而 `main` 是修補新發現 fail-open 的地方；如果直接指向 `main`，隨手一次 `git pull` 就會無聲改變本地的閘門邏輯。符號連結指向的是目錄而非 commit，更新時請明確切換：
+固定在 tag，不要對齊 `main`。這些 skill 決定 PR 能否合併，而 `main` 是修補新發現 fail-open 的地方；指向 `main` 的話，隨手一次 `git pull` 就會改掉你的閘門。符號連結指的是目錄不是 commit，所以切換 tag 不會弄壞它：
 
 ```bash
 git fetch --tags && git checkout v0.2.1
 ```
 
-如果你在開發 `lorenzini` 本身，簽出的分支就是你當下跑的閘門。2026-09-20 曾實際測得：同一支輪詢器在同一個 PR 上相隔幾分鐘執行，一個分支給出 `RESULT=CLEAN`，另一個分支卻回報 `RESULT=NOT_REVIEWED`，而那份審查內文清清楚楚寫著程式碼從未被讀過。
+如果你在開發 `lorenzini` 本身，簽出的分支**就是**你當下在跑的閘門。2026-09-20 實測：同一支輪詢器在同一個 PR 上相隔幾分鐘執行，一個分支給 `RESULT=CLEAN`，另一個給 `RESULT=NOT_REVIEWED`，而那份審查內文清清楚楚寫著程式碼從未被讀過。
 
 ## 版本支援
 
