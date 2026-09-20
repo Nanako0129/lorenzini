@@ -417,7 +417,14 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
       # The shape is checked, not just the exit status: GraphQL answers a failed
       # query with HTTP 200 and an `errors` array, so a zero exit says nothing
       # about whether `reviewThreads` came back.
-      if ! threads=$(gh api graphql -f query="query{repository(owner:\"${REPO%%/*}\",name:\"${REPO##*/}\"){pullRequest(number:$PR){reviewThreads(first:100){nodes{isResolved comments(first:50){nodes{path author{login __typename}}}}}}}}" 2>/dev/null) \
+      # PAGINATED. `reviewThreads(first:100)` silently truncates at 100, the
+      # same defect as the reviews endpoint capping at 30 without --paginate: a
+      # long-lived pull request pushes its newest threads out of the window and
+      # their absence reads as "handled". gh supplies $endCursor itself and
+      # emits one document per page; `jq -s` merges them back into the single
+      # shape the filter below already expects.
+      if ! threads=$(gh api graphql --paginate -f query="query(\$endCursor:String){repository(owner:\"${REPO%%/*}\",name:\"${REPO##*/}\"){pullRequest(number:$PR){reviewThreads(first:100, after:\$endCursor){pageInfo{hasNextPage endCursor} nodes{isResolved comments(first:50){nodes{path author{login __typename}}}}}}}}" 2>/dev/null \
+                     | jq -s '{data:{repository:{pullRequest:{reviewThreads:{nodes:[.[].data.repository.pullRequest.reviewThreads.nodes[]]}}}}}' 2>/dev/null) \
          || ! printf '%s\n' "$threads" | jq -e '.data.repository.pullRequest.reviewThreads.nodes | type == "array"' >/dev/null 2>&1; then
         [ "${thread_warned:-0}" = "1" ] || { echo "Could not read the review threads. Retrying rather than counting zero findings."; thread_warned=1; }
         clean_seen=0
