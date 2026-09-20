@@ -409,7 +409,17 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   # --paginate is not optional: the reviews endpoint caps at 30 per page and a
   # long-running PR pushes the newest review out of the first page. Note that
   # --paginate --slurp cannot be combined with gh's own --jq; pipe into jq.
-  reviews=$(gh api --paginate --slurp "repos/$REPO/pulls/$PR/reviews?per_page=100" 2>/dev/null || printf '[]')
+  # A FAILED READ IS NOT AN EMPTY REVIEW LIST. This `|| printf '[]'` was the
+  # last one in this file and the one with the widest blast radius: $reviews
+  # feeds the head-keyed verdict, the body classifier AND the foreign-reviewer
+  # body scan added in d8f790c. With an issue comment supplying the completion
+  # marker, a failed read here produced a CLEAN while another reviewer had body
+  # findings. Raised by CodeRabbit on lorenzini#2, in the outside-diff bucket.
+  if ! reviews=$(gh api --paginate --slurp "repos/$REPO/pulls/$PR/reviews?per_page=100" 2>/dev/null) \
+     || ! printf '%s\n' "$reviews" | jq -e 'type == "array" and all(.[]; type == "array")' >/dev/null 2>&1; then
+    [ "${rev_warned:-0}" = "1" ] || { echo "Could not read the reviews endpoint. Retrying rather than counting zero reviews."; rev_warned=1; }
+    clean_seen=0; sleep "$INTERVAL"; continue
+  fi
   athead=$(printf '%s\n' "$reviews" \
     | jq --arg h "$HEAD" --arg b "$BOT" '[.[][] | select(.user.login == $b and .commit_id == $h)]' 2>/dev/null || printf '[]')
   n_at_head=$(printf '%s\n' "$athead" | jq 'length' 2>/dev/null || echo 0)
@@ -629,7 +639,14 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
     # $endCursor itself when --paginate is used, emitting one JSON document per
     # page; `jq -s` merges them back into the single shape the three filters
     # below already expect, so nothing downstream changes.
-    if ! threads=$(gh api graphql --paginate -f query="query(\$endCursor:String){repository(owner:\"${REPO%%/*}\",name:\"${REPO##*/}\"){pullRequest(number:$PR){reviewThreads(first:100, after:\$endCursor){pageInfo{hasNextPage endCursor} nodes{isResolved comments(first:50){nodes{databaseId path author{login __typename}}}}}}}}" 2>/dev/null \
+    # `set -o pipefail` INSIDE the command substitution, not globally. Without
+    # it the pipeline's status is jq's, so a `gh api graphql --paginate` that
+    # fails AFTER emitting earlier pages exits 0 and jq -s happily builds a
+    # valid PARTIAL node array -- a truncated read that passes the shape check
+    # below. Raised by CodeRabbit on lorenzini#2. Scoped to the subshell because
+    # this script has pipelines that legitimately exit non-zero, `grep -c` with
+    # no match among them, and a global pipefail would turn those into failures.
+    if ! threads=$(set -o pipefail; gh api graphql --paginate -f query="query(\$endCursor:String){repository(owner:\"${REPO%%/*}\",name:\"${REPO##*/}\"){pullRequest(number:$PR){reviewThreads(first:100, after:\$endCursor){pageInfo{hasNextPage endCursor} nodes{isResolved comments(first:50){nodes{databaseId path author{login __typename}}}}}}}}" 2>/dev/null \
                    | jq -s '{data:{repository:{pullRequest:{reviewThreads:{nodes:[.[].data.repository.pullRequest.reviewThreads.nodes[]]}}}}}' 2>/dev/null) \
        || ! printf '%s\n' "$threads" | jq -e '.data.repository.pullRequest.reviewThreads.nodes | type == "array"' >/dev/null 2>&1; then
       [ "${thread_warned:-0}" = "1" ] || { echo "Could not read the review threads. Retrying rather than counting zero findings."; thread_warned=1; }
@@ -665,7 +682,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
        | (.user.login // "") as $l | select(($owned | index($l)) | not)
        | "\($l)\t\(.body // "")"] | .[]' 2>/dev/null)
     fbody_hits=$(printf '%s\n' "$fbodies" \
-      | grep -oE 'Suppressed comments \([0-9]+\)|Comments generated:[*[:space:]]*[1-9][0-9]*|Findings:[*[:space:]]*[1-9][0-9]*' || true)
+      | grep -oE 'Suppressed comments \([1-9][0-9]*\)|Comments generated:[*[:space:]]*[1-9][0-9]*|Findings:[*[:space:]]*[1-9][0-9]*' || true)
     n_fbody=$(printf '%s\n' "$fbody_hits" | grep -c '[^[:space:]]') || true
     resolved_ids=$(printf '%s\n' "$threads" | dispositioned_ids || printf '[]')
     [ -n "$resolved_ids" ] || resolved_ids='[]'
