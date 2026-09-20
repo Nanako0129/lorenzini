@@ -55,7 +55,7 @@ Clone at a release tag and create symlinks in `~/.claude/skills/`:
 
 ```bash
 git clone https://github.com/Nanako0129/lorenzini.git ~/side-project/lorenzini
-cd ~/side-project/lorenzini && git checkout v0.2.0
+cd ~/side-project/lorenzini && git checkout v0.2.1
 for s in codex copilot coderabbit; do
   ln -s ~/side-project/lorenzini/$s-review-wait ~/.claude/skills/$s-review-wait
 done
@@ -66,7 +66,7 @@ This setup requires an authenticated `gh` CLI and `jq`.
 Pin symlinks to a release tag, never to `main`. Because these skills govern merge safety and `main` is where newly caught fail-opens are patched, running on `main` means an ordinary `git pull` silently changes your gate logic. Symlinks target directory paths rather than commits. Update deliberately:
 
 ```bash
-git fetch --tags && git checkout v0.2.0
+git fetch --tags && git checkout v0.2.1
 ```
 
 If you develop inside `lorenzini`, your checked-out branch is your active gate. On 2026-09-20, running the same poller on the same pull request minutes apart produced `RESULT=CLEAN` on one branch and `RESULT=NOT_REVIEWED` on another—evaluating a review body that stated the source files were never read.
@@ -75,7 +75,8 @@ If you develop inside `lorenzini`, your checked-out branch is your active gate. 
 
 | Tag | Status | Notes |
 |---|---|---|
-| `v0.2.0` | Usable | Current baseline with cross-reviewer, non-review, and format recognition guards. |
+| `v0.2.1` | Usable | Current baseline. Fixes a race where a skip notice was read as terminal while the review was starting, and routes a spent Copilot quota to CodeRabbit instead of stopping. |
+| `v0.2.0` | Superseded | Has the cross-reviewer, non-review and format recognition guards, but treats a skip notice as terminal on first sight. On a repository with CodeRabbit auto review disabled, that fires every round. |
 | `v0.1.1` | Superseded | Lacks cross-reviewer guards, non-review detection, and updated format recognition. |
 | `v0.1.0` | Do not use | Contains four distinct gates that report passes without earning them. |
 
