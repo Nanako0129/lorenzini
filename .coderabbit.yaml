@@ -1,0 +1,97 @@
+# CodeRabbit configuration.
+# Schema: https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
+#
+# Every instruction below restates a rule this repository already writes down in
+# README.md or docs/fail-open-ledger.md. Nothing here is a new policy.
+#
+# The one setting that is a choice rather than a restatement is
+# auto_pause_after_reviewed_commits, commented at its key.
+
+reviews:
+  auto_review:
+    # 0 disables the pause entirely, which is the schema's documented sentinel
+    # ("Set to 0 to disable"), not a large number chosen by hand.
+    #
+    # This repository is where the default bit hardest. At 5, automatic review
+    # stops silently once a pull request has five reviewed commits, and the
+    # poller in this very repository then reported TIMEOUT -- "the verdict may
+    # still arrive" -- for twenty minutes, twice, on branches where nothing was
+    # ever going to arrive. Every other repository here had this set to 0 weeks
+    # earlier; this one was created later and missed the batch, so the tool that
+    # documents the trap was the last thing still falling into it.
+    auto_pause_after_reviewed_commits: 0
+
+  path_instructions:
+    - path: "*/scripts/poll-*.sh"
+      instructions: |
+        These decide whether a third-party reviewer's verdict means pass. The
+        rule the whole repository turns on: NEVER INFER A PASS FROM ABSENCE. A
+        verdict requires an explicit positive completion marker; no marker means
+        keep polling, not "nothing found, therefore clean".
+
+        Read docs/fail-open-ledger.md before judging a change here. Nine entries,
+        every one a pass reported where none was earned, and most are the same
+        sentence with different nouns: an empty set read as a clean result.
+        Empty because a filter matched nothing, because the findings sat in a
+        bucket the reviewer's own count ignores, because the review had not
+        finished, because a read failed rather than returning nothing, or
+        because a vendor changed its wording and every pattern stopped matching
+        at once.
+
+        So flag, specifically:
+        - a failed command, an empty string or a default value being treated as
+          a negative result. A read that errored is not a count of zero.
+        - a new pattern added for wherever findings appeared last time. That
+          list belongs to the vendor and changes without notice. Prefer a
+          number the vendor maintains, disagreeing with a number we compute.
+        - a state that cannot be resolved by polling -- skipped, paused, rate
+          limited -- being reported as a timeout. Those say "never"; a timeout
+          says "not yet".
+        - a verdict that can turn a withheld pass into a pass. The only safe
+          direction is toward withholding.
+
+        Shell notes that have already cost a bug each: gh api with --paginate
+        and --slurp cannot be combined with gh's own --jq, so pipe into jq
+        instead; and without --paginate the reviews endpoint caps at 30, which
+        hides the newest review on a long pull request.
+
+    - path: "coderabbit-review-wait/jev-questions-*.json"
+      instructions: |
+        The criteria text IS the classifier. v1 missed "Nitpick comments" at
+        0.37 only because the word "nitpick" was absent, and one added sentence
+        took it to 0.70.
+
+        So any edit here needs tests/run-gold-set.py re-run and a NEW result
+        file written to tests/fixtures/, never an overwrite of an existing one:
+        the baselines are what make the next edit judgeable. Flag an edit that
+        arrives without one, and flag a criteria change that names the literal
+        strings it is trying to fix rather than the category they belong to --
+        that is fitting to the gold set rather than stating a policy.
+
+    - path: "{scripts/jev.sh,tests/run-gold-set.py}"
+      instructions: |
+        The credential must never reach an argument vector: an argv is readable
+        through ps by every local account for the duration of the call. It goes
+        in on stdin.
+
+        This path is optional and opt-in. It must stay unable to turn a withheld
+        verdict into a pass, because that property is what makes a timeout, a
+        429, a missing key and a low-confidence answer all fail closed without
+        each being handled separately.
+
+    - path: "docs/fail-open-ledger.md"
+      instructions: |
+        This file records what has already been fixed, which makes a false entry
+        the worst kind here: entry 1 claimed a cross-check that was not in the
+        code, and it shipped and stayed true-looking for two days.
+
+        So flag any "Now:" claim that cannot be verified against the current
+        source, and flag any count in prose -- two of them went stale within a
+        day, each caught by a reviewer rather than by the person who wrote it.
+
+knowledge_base:
+  code_guidelines:
+    filePatterns:
+      - "README.md"
+      - "docs/fail-open-ledger.md"
+      - "*/SKILL.md"
