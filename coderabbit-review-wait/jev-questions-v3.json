@@ -1,0 +1,19 @@
+{
+  "_variant": "v3",
+  "_model": "jev-1.13.0",
+  "_measured": {
+    "gold_set": "tests/fixtures/gold-cr-labels.json",
+    "accuracy": "29/30",
+    "recall_hidden_work": "8/8",
+    "false_positive": 1,
+    "flip_rate": "0/30 over three repeats",
+    "date": "2026-09-20"
+  },
+  "_the_criteria_are_the_classifier": "Changing one word here changes what this file classifies. v1 scored 27/30 and missed 'Nitpick comments' at 0.37 purely because the word 'nitpick' did not appear; adding one sentence took it to 0.70. So this lives in its own versioned file rather than inside a script, every call logs a hash of the question set, and any edit means re-running tests/run-gold-set.py and writing a new result file rather than overwriting an old one.",
+  "_known_limit": "Does not recover the heading 'Action not completed', which rose from 0.65 under v2 to 0.69 under v3. Its section body is exactly what the run-description clause excludes, but the classifier sees only the HEADING and that heading reads like something failed. A heading-only classifier cannot resolve it; sending the section's first line would, at the cost of the position that only titles leave the machine.",
+  "question": "`label` is the heading of one collapsed <details> section in an automated code review posted by a review bot on a GitHub pull request. State: the section under this heading holds review findings, withheld or deferred review comments, failed checks, or files the bot did NOT review.",
+  "criteria": {
+    "true": "The section lists work a maintainer still has to look at: findings, suppressed or out-of-range comments, failed checks, or skipped files. Nitpick, minor, or duplicate comments the bot chose not to post inline are findings too, however small.",
+    "false": "The section only restates configuration, the commit list, a walkthrough or summary, checks that all PASSED, a fix suggestion inside an already-counted finding, or an advertisement for another bot feature. It is also false when the section describes the review RUN rather than its findings: the configuration or profile used, a model or plan name, a run identifier, how many commits were read, or a notice that the bot has already reviewed these commits and names a command to rerun. It is false when it merely expands the detail of a check whose outcome is already carried by a summary tally elsewhere in the same body."
+  }
+}

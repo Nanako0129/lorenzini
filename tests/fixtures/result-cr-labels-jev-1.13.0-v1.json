@@ -1,0 +1,404 @@
+{
+ "round": "jev-1.13.0",
+ "family": "CR-labels",
+ "tau": 0.5,
+ "repeat": 3,
+ "score": {
+  "accuracy": "27/30",
+  "recall_hidden_work": "6/8",
+  "false_positive": 1,
+  "flip_rate": "1/30"
+ },
+ "detail": [
+  {
+   "id": "L01",
+   "cat": "known_bucket",
+   "expected": true,
+   "mean": 0.37,
+   "vals": [
+    0.38,
+    0.38,
+    0.35
+   ],
+   "pass": false,
+   "flip": false
+  },
+  {
+   "id": "L02",
+   "cat": "known_bucket",
+   "expected": true,
+   "mean": 0.763,
+   "vals": [
+    0.76,
+    0.76,
+    0.77
+   ],
+   "pass": true,
+   "flip": false
+  },
+  {
+   "id": "L03",
+   "cat": "known_bucket",
+   "expected": true,
+   "mean": 0.493,
+   "vals": [
+    0.48,
+    0.52,
+    0.48
+   ],
+   "pass": false,
+   "flip": true
+  },
+  {
+   "id": "L04",
+   "cat": "known_bucket",
+   "expected": true,
+   "mean": 0.667,
+   "vals": [
+    0.67,
+    0.66,
+    0.67
+   ],
+   "pass": true,
+   "flip": false
+  },
+  {
+   "id": "L05",
+   "cat": "coverage_hole",
+   "expected": true,
+   "mean": 0.863,
+   "vals": [
+    0.87,
+    0.86,
+    0.86
+   ],
+   "pass": true,
+   "flip": false
+  },
+  {
+   "id": "L06",
+   "cat": "failed_check",
+   "expected": true,
+   "mean": 0.737,
+   "vals": [
+    0.73,
+    0.74,
+    0.74
+   ],
+   "pass": true,
+   "flip": false
+  },
+  {
+   "id": "L07",
+   "cat": "ambiguous",
+   "expected": true,
+   "mean": 0.657,
+   "vals": [
+    0.65,
+    0.66,
+    0.66
+   ],
+   "pass": true,
+   "flip": false
+  },
+  {
+   "id": "L08",
+   "cat": "ambiguous",
+   "expected": true,
+   "mean": 0.563,
+   "vals": [
+    0.55,
+    0.58,
+    0.56
+   ],
+   "pass": true,
+   "flip": false
+  },
+  {
+   "id": "N01",
+   "cat": "boilerplate",
+   "expected": false,
+   "mean": 0.247,
+   "vals": [
+    0.25,
+    0.25,
+    0.24
+   ],
+   "pass": true,
+   "flip": false
+  },
+  {
+   "id": "N02",
+   "cat": "boilerplate",
+   "expected": false,
+   "mean": 0.18,
+   "vals": [
+    0.19,
+    0.19,
+    0.16
+   ],
+   "pass": true,
+   "flip": false
+  },
+  {
+   "id": "N03",
+   "cat": "boilerplate",
+   "expected": false,
+   "mean": 0.16,
+   "vals": [
+    0.16,
+    0.16,
+    0.16
+   ],
+   "pass": true,
+   "flip": false
+  },
+  {
+   "id": "N04",
+   "cat": "boilerplate",
+   "expected": false,
+   "mean": 0.19,
+   "vals": [
+    0.19,
+    0.18,
+    0.2
+   ],
+   "pass": true,
+   "flip": false
+  },
+  {
+   "id": "N05",
+   "cat": "hard_negative",
+   "expected": false,
+   "mean": 0.07,
+   "vals": [
+    0.07,
+    0.07,
+    0.07
+   ],
+   "pass": true,
+   "flip": false
+  },
+  {
+   "id": "N06",
+   "cat": "advert",
+   "expected": false,
+   "mean": 0.347,
+   "vals": [
+    0.37,
+    0.34,
+    0.33
+   ],
+   "pass": true,
+   "flip": false
+  },
+  {
+   "id": "N07",
+   "cat": "boilerplate",
+   "expected": false,
+   "mean": 0.393,
+   "vals": [
+    0.4,
+    0.39,
+    0.39
+   ],
+   "pass": true,
+   "flip": false
+  },
+  {
+   "id": "N08",
+   "cat": "boilerplate",
+   "expected": false,
+   "mean": 0.447,
+   "vals": [
+    0.45,
+    0.44,
+    0.45
+   ],
+   "pass": true,
+   "flip": false
+  },
+  {
+   "id": "N09",
+   "cat": "hard_negative",
+   "expected": false,
+   "mean": 0.237,
+   "vals": [
+    0.25,
+    0.23,
+    0.23
+   ],
+   "pass": true,
+   "flip": false
+  },
+  {
+   "id": "N10",
+   "cat": "advert",
+   "expected": false,
+   "mean": 0.283,
+   "vals": [
+    0.28,
+    0.28,
+    0.29
+   ],
+   "pass": true,
+   "flip": false
+  },
+  {
+   "id": "N11",
+   "cat": "advert",
+   "expected": false,
+   "mean": 0.3,
+   "vals": [
+    0.3,
+    0.31,
+    0.29
+   ],
+   "pass": true,
+   "flip": false
+  },
+  {
+   "id": "N12",
+   "cat": "hard_negative",
+   "expected": false,
+   "mean": 0.263,
+   "vals": [
+    0.27,
+    0.27,
+    0.25
+   ],
+   "pass": true,
+   "flip": false
+  },
+  {
+   "id": "N13",
+   "cat": "boilerplate",
+   "expected": false,
+   "mean": 0.217,
+   "vals": [
+    0.21,
+    0.21,
+    0.23
+   ],
+   "pass": true,
+   "flip": false
+  },
+  {
+   "id": "N14",
+   "cat": "advert",
+   "expected": false,
+   "mean": 0.31,
+   "vals": [
+    0.3,
+    0.32,
+    0.31
+   ],
+   "pass": true,
+   "flip": false
+  },
+  {
+   "id": "N15",
+   "cat": "advert",
+   "expected": false,
+   "mean": 0.313,
+   "vals": [
+    0.32,
+    0.31,
+    0.31
+   ],
+   "pass": true,
+   "flip": false
+  },
+  {
+   "id": "N16",
+   "cat": "inside_finding",
+   "expected": false,
+   "mean": 0.217,
+   "vals": [
+    0.22,
+    0.22,
+    0.21
+   ],
+   "pass": true,
+   "flip": false
+  },
+  {
+   "id": "N17",
+   "cat": "inside_finding",
+   "expected": false,
+   "mean": 0.203,
+   "vals": [
+    0.2,
+    0.21,
+    0.2
+   ],
+   "pass": true,
+   "flip": false
+  },
+  {
+   "id": "N18",
+   "cat": "inside_finding",
+   "expected": false,
+   "mean": 0.18,
+   "vals": [
+    0.19,
+    0.18,
+    0.17
+   ],
+   "pass": true,
+   "flip": false
+  },
+  {
+   "id": "N19",
+   "cat": "boilerplate",
+   "expected": false,
+   "mean": 0.143,
+   "vals": [
+    0.14,
+    0.14,
+    0.15
+   ],
+   "pass": true,
+   "flip": false
+  },
+  {
+   "id": "N20",
+   "cat": "boilerplate",
+   "expected": false,
+   "mean": 0.367,
+   "vals": [
+    0.35,
+    0.38,
+    0.37
+   ],
+   "pass": true,
+   "flip": false
+  },
+  {
+   "id": "N21",
+   "cat": "boilerplate",
+   "expected": false,
+   "mean": 0.507,
+   "vals": [
+    0.51,
+    0.5,
+    0.51
+   ],
+   "pass": false,
+   "flip": false
+  },
+  {
+   "id": "N22",
+   "cat": "boilerplate",
+   "expected": false,
+   "mean": 0.167,
+   "vals": [
+    0.16,
+    0.18,
+    0.16
+   ],
+   "pass": true,
+   "flip": false
+  }
+ ]
+}

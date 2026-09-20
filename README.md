@@ -40,6 +40,50 @@ done
 
 Requires `gh` (authenticated) and `jq`.
 
+## The optional Jev shadow check
+
+`coderabbit-review-wait` can ask a classifier whether a collapsed section heading
+names work someone still has to look at. **It is off unless you turn it on, and
+it never changes a verdict.**
+
+You do not need it. Without a key, or with `JEV_SHADOW` unset, the scripts behave
+exactly as they do today.
+
+| | |
+|---|---|
+| Turn it on | `JEV_SHADOW=1` |
+| Key | `TYPESAFE_API_KEY`, or `~/.config/typesafe/api_key` (chmod 600) |
+| Get a key | <https://console.typesafe.ai/settings/keys> — early access, currently a waitlist |
+| In Claude Code | put `TYPESAFE_API_KEY` and `JEV_SHADOW` in the `env` block of `~/.claude/settings.json` |
+| Where holds are logged | `$XDG_STATE_HOME/lorenzini/shadow-holds.jsonl`, or `JEV_SHADOW_LOG` |
+
+With no key it prints `(jev: unavailable -- ...)` and leaves the verdict alone.
+So do a timeout, an HTTP error and a missing questions file. That is not
+politeness: the only transition this is ever allowed to make is `CLEAN → HOLD`,
+so every way it can fail leaves today's answer standing. A classifier that could
+turn a held verdict into a pass would need its failures handled one at a time,
+and one of them would be missed.
+
+Three outcomes, kept distinguishable on purpose — `did not run`, `ran and found
+nothing`, `ran and would hold`. Collapsing the first two into one silence is the
+mistake the ledger is mostly about.
+
+**The criteria are the classifier.** They live in
+[`coderabbit-review-wait/jev-questions-v3.json`](coderabbit-review-wait/jev-questions-v3.json),
+not inside a script, because editing one word changes what the thing decides:
+v1 missed `Nitpick comments` at 0.37 only because the word "nitpick" was absent,
+and one added sentence took it to 0.70. After any edit, re-run the gold set and
+write a NEW result file:
+
+```bash
+python3 tests/run-gold-set.py 3 coderabbit-review-wait/jev-questions-v4.json
+```
+
+Baselines are in [`tests/fixtures/`](tests/fixtures/). v3 scores 29/30 with 8/8
+recall on hidden work and a 0/30 flip rate over three repeats. It does **not**
+recover the heading `Action not completed`, which the file records as a known
+limit rather than leaving for the next person to rediscover.
+
 ## The one rule
 
 **Never infer a pass from absence.**

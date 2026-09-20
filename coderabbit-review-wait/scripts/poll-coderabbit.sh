@@ -122,7 +122,14 @@ unreplied_resolved() { jq -r "$UNREPLIED_JQ" 2>/dev/null; }
 jev_shadow() {
   [ "${JEV_SHADOW:-0}" = "1" ] || return 0
   local body="$1" jev headings n out
-  jev="$HOME/side-project/jev-research/bin/jev.sh"
+  # Repo-local, never a path under someone'"'"'s home. This file lives in a public
+  # repository: a hardcoded ~/side-project/... works on exactly one machine, and
+  # the thing it points at is not version controlled, so it can change or vanish
+  # without a diff. Resolved from this script'"'"'s own location so a clone works.
+  local here; here=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+  jev="${JEV_BIN:-$here/scripts/jev.sh}"
+  local qfile="${JEV_QUESTIONS:-$here/coderabbit-review-wait/jev-questions-v3.json}"
+  [ -r "$qfile" ] || { echo "(jev: unavailable -- questions file $qfile not readable)"; return 0; }
   [ -x "$jev" ] || { echo "(jev: unavailable -- $jev not executable)"; return 0; }
 
   headings=$(printf '%s\n' "$body" \
@@ -133,19 +140,34 @@ jev_shadow() {
   [ -n "$headings" ] || { echo "(jev: nothing to check -- no collapsed sections in this body)"; return 0; }
   n=$(printf '%s\n' "$headings" | wc -l | tr -d ' ')
 
-  out=$(printf '%s\n' "$headings" | jq -R . | jq -sc --arg q \
-"\`label\` is the heading of one collapsed <details> section in an automated code review posted by a review bot on a GitHub pull request. State: the section under this heading holds review findings, withheld or deferred review comments, failed checks, or files the bot did NOT review." \
-    --arg ct "The section lists work a maintainer still has to look at: findings, suppressed or out-of-range comments, failed checks, or skipped files. Nitpick, minor, or duplicate comments the bot chose not to post inline are findings too, however small." \
-    --arg cf "The section only restates configuration, the commit list, a walkthrough or summary, checks that all PASSED, a fix suggestion inside an already-counted finding, or an advertisement for another bot feature. It is also false when the section describes the review RUN rather than its findings: the configuration or profile used, a model or plan name, a run identifier, how many commits were read, or a notice that the bot has already reviewed these commits and names a command to rerun. It is false when it merely expands the detail of a check whose outcome is already carried by a summary tally elsewhere in the same body." '
+  # The question and criteria come from a VERSIONED FILE, not from a heredoc
+  # here. The criteria text is the classifier -- v1 missed "Nitpick comments" at
+  # 0.37 purely because the word "nitpick" did not appear, and one added
+  # sentence took it to 0.70. Kept inline it would be a second home for the same
+  # contract, drifting from the copy the gold set was measured against; kept in
+  # a file it can be diffed, versioned, and re-measured by tests/run-gold-set.py.
+  #
+  # The request is built once so its qset_hash can be computed the same way
+  # jev.sh does. jev.sh logs that hash to its own file but returns only
+  # .answers, so a shadow row written from the answers alone could not say which
+  # criteria produced it, and rows from two variants would be indistinguishable
+  # in one file.
+  local req qhash
+  req=$(printf '%s\n' "$headings" | jq -R . | jq -sc --slurpfile spec "$qfile" '
+      $spec[0] as $s |
       {state: {source: "GitHub pull request review body, collapsed section headings"},
        questions: (to_entries | map({key: ("h\(.key)"), value: {type: "noul",
-         instructions: {question: $q, label: .value},
-         criteria: {"true": $ct, "false": $cf}}}) | from_entries)}' \
-    | JEV_TIMEOUT="${JEV_TIMEOUT:-8}" "$jev" - 2>/dev/null) \
+         instructions: {question: $s.question, label: .value},
+         criteria: $s.criteria}}) | from_entries)}') \
+    || { echo "(jev: unavailable -- could not build the request from $qfile)"; return 0; }
+  qhash=$(printf '%s' "$req" | jq -cS '.questions' | shasum -a 256 | cut -c1-16)
+  out=$(printf '%s' "$req" | JEV_TIMEOUT="${JEV_TIMEOUT:-8}" "$jev" - 2>/dev/null) \
     || { echo "(jev: unavailable -- call failed; verdict unchanged)"; return 0; }
 
   # Only headings HIDDEN_RE did NOT already catch: the question is what a
   # classifier adds over the patterns, not whether it agrees with them.
+  local shadow_log="${JEV_SHADOW_LOG:-${XDG_STATE_HOME:-$HOME/.local/state}/lorenzini/shadow-holds.jsonl}"
+  mkdir -p "$(dirname "$shadow_log")" 2>/dev/null || true
   local flagged="" i=0 lbl val
   while IFS= read -r lbl; do
     val=$(printf '%s\n' "$out" | jq -r --arg k "h$i" '.[$k].noul // empty' 2>/dev/null)
@@ -178,7 +200,7 @@ EOF
                  --arg noul "$nv" --arg label "$lb" --arg model "${JEV_MODEL:-jev-1.13.0}" \
             '{ts:$ts, repo:$repo, pr:($pr|tonumber), head:$head, model:$model,
                noul:($noul|tonumber), label:$label, verdict_without_jev:"CLEAN", adjudicated:null}' \
-            >> "${JEV_SHADOW_LOG:-$HOME/side-project/jev-research/data/shadow-holds.jsonl}"
+            >> "$shadow_log"
         done
     done <<SHADOWEOF
 $flagged
@@ -353,6 +375,29 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   icomments=$(gh api --paginate --slurp "repos/$REPO/issues/$PR/comments?per_page=100" 2>/dev/null || printf '[]')
   note=$(printf '%s\n' "$icomments" | jq -r --arg h "$HEAD" --arg b "$BOT" \
     '[.[][] | select(.user.login == $b and (.body | contains($h)))] | last | .body // ""' 2>/dev/null)
+  # A SKIP NOTICE CARRIES NO HEAD SHA, so it must not be looked for in $note.
+  # Measured on Syrtis-Agent#4, 2026-09-20: CodeRabbit posted "Review skipped --
+  # auto reviews are disabled on this repository" and that comment contains no
+  # commit id at all, because a skip is about the configuration rather than
+  # about a commit. Keying it to the head sha meant the branch never fired and
+  # the poll fell through to TIMEOUT on five pull requests at once.
+  #
+  # TIMEOUT and SKIPPED are not interchangeable. TIMEOUT says the verdict may
+  # still arrive; SKIPPED says it never will. Reported as the same thing, the
+  # operator waits for something that is not coming.
+  #
+  # The LAST bot comment is the authority, not any comment: a skip notice from
+  # an earlier state (a draft since marked ready) must not block forever, and
+  # CodeRabbit posts a fresh comment whenever it acts.
+  last_note=$(printf '%s\n' "$icomments" | jq -r --arg b "$BOT" \
+    '[.[][] | select(.user.login == $b)] | last | .body // ""' 2>/dev/null)
+  case "$last_note" in
+    *"Review skipped"*)
+      echo "CodeRabbit skipped this PR (its most recent comment is a skip notice):"
+      printf '%s\n' "$last_note" | sed 's/<[^>]*>//g' | sed -n '/Review skipped/,/^$/p' | head -8
+      echo "RESULT=ERROR review skipped -- not a slow review. Check reviews.auto_review.enabled and the base branch."
+      exit 2 ;;
+  esac
   case "$note" in
     *"Review skipped"*)
       echo "CodeRabbit skipped this PR:"
