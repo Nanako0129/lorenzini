@@ -330,26 +330,32 @@ of defence.* The clean round arrived by deleting the check, not by fixing it.
 ## What the pattern is
 
 Most of them are the same sentence with different nouns: **an empty set was read
-as a clean result.** Empty because the filter was wrong (#1), because the
-findings were somewhere else (#2, #4), because the work had not finished yet
-(#3, #5), because a read failed rather than returning nothing (#6), or because
-the vendor changed its wording and every pattern stopped matching at once (#7).
+as a clean result.** The set came back empty because the filter was wrong,
+because the findings were parked somewhere the count did not reach, because the
+work had not finished yet, because a read failed rather than returning nothing,
+or because the vendor changed its wording and every pattern stopped matching at
+once.
 
-Do not keep a tally here. An earlier version of this paragraph said "four of the
-five" and went stale the moment #6 and #7 were added -- and it was a reviewer,
-not its author, that noticed. A count is one more contract with a second home.
+**Do not keep a tally here, and do not enumerate the entries.** Both go stale on
+the next entry, and both have. An earlier version of this paragraph said "four
+of the five" and was overtaken within a day. Its replacement dropped the tally
+but kept a list of entry numbers, which stopped at #7 while the ledger grew to
+#9 -- so the paragraph forbidding a count was itself carrying three, and a
+reviewer caught that too. An entry number, like a count, is a contract with a
+second home. Name the mechanism; the entries are above and they are numbered.
 
 The defence is not vigilance. It is that the default answer to "I found nothing"
 is *keep looking*, and only an explicit statement of completion ends the wait.
-Written as code rather than as a habit, because the habit failed five times.
+That is written as code rather than kept as a habit, because the habit is what
+failed every time listed above.
 
 Two consequences worth keeping in view:
 
-- **Fixing a fail-open can open another one.** #3 was introduced while fixing a
-  real bug, and #5's fix had a symmetric trap waiting inside it. Any change to
-  the completion logic needs the existing regression cases run, not just the new
-  one.
-- **None of these were found by the person who wrote the code.** Four came from
-  other sessions or from the user; one came from the reviewer itself. Testing
-  covers the shapes you already imagined, which is exactly the set that does not
-  contain your next bug.
+- **Fixing a fail-open can open another one.** At least one entry here was
+  introduced while fixing a real bug, and another's fix had a symmetric trap
+  waiting inside it. Any change to the completion logic needs the existing
+  regression cases run, not just the new one.
+- **None of these were found by the person who wrote the code.** They came from
+  other sessions, from the user, and in one case from the reviewer itself.
+  Testing covers the shapes you already imagined, which is exactly the set that
+  does not contain your next bug.
