@@ -98,6 +98,96 @@ dispositioned_ids() { jq -r "$DISPOSITIONED_JQ" 2>/dev/null; }
 # GraphQL reviewThreads payload on stdin -> count of resolved-without-human-reply threads
 unreplied_resolved() { jq -r "$UNREPLIED_JQ" 2>/dev/null; }
 
+# ---------------------------------------------------------------------------
+# Jev shadow check (opt-in, JEV_SHADOW=1). Classifies every collapsed <details>
+# heading in the review body: "does this section list work a maintainer still
+# has to look at?" Reports only headings HIDDEN_RE did not already match, which
+# is the marginal value being measured.
+#
+# SHADOW MEANS SHADOW. This never changes a verdict. The transition it is being
+# evaluated for, and the only one it may ever be given, is CLEAN -> HOLD. It can
+# withhold a pass; it can never grant one. With that rule, a 429, a timeout, a
+# missing key and a low-confidence answer are all automatically fail-closed --
+# they leave today's verdict exactly as it was.
+#
+# Three outcomes, kept distinguishable on purpose. "Did not run" and "ran and
+# had nothing to say" look identical if you let them, and four of the nine
+# entries in the fail-open ledger are an absence that was read as good news.
+#
+# Model pinned to jev-1.13.0 by jev.sh; the criteria below are the v3 wording
+# measured at 29/30 on a 30-item gold set, 8/8 recall on hidden work, 0/30 flip
+# rate over three repeats. Changing one word changes the classifier, which is
+# why each call logs a qset_hash and why the variant is named here rather than
+# left to be inferred from the text.
+jev_shadow() {
+  [ "${JEV_SHADOW:-0}" = "1" ] || return 0
+  local body="$1" jev headings n out
+  jev="$HOME/side-project/jev-research/bin/jev.sh"
+  [ -x "$jev" ] || { echo "(jev: unavailable -- $jev not executable)"; return 0; }
+
+  headings=$(printf '%s\n' "$body" \
+    | grep -oE '<summary>.*</summary>' \
+    | sed -E 's#</?summary>##g; s/<[^>]*>//g' \
+    | sed -E 's/^[[:space:]]+|[[:space:]]+$//g' \
+    | grep -vE '^$' | sort -u)
+  [ -n "$headings" ] || { echo "(jev: nothing to check -- no collapsed sections in this body)"; return 0; }
+  n=$(printf '%s\n' "$headings" | wc -l | tr -d ' ')
+
+  out=$(printf '%s\n' "$headings" | jq -R . | jq -sc --arg q \
+"\`label\` is the heading of one collapsed <details> section in an automated code review posted by a review bot on a GitHub pull request. State: the section under this heading holds review findings, withheld or deferred review comments, failed checks, or files the bot did NOT review." \
+    --arg ct "The section lists work a maintainer still has to look at: findings, suppressed or out-of-range comments, failed checks, or skipped files. Nitpick, minor, or duplicate comments the bot chose not to post inline are findings too, however small." \
+    --arg cf "The section only restates configuration, the commit list, a walkthrough or summary, checks that all PASSED, a fix suggestion inside an already-counted finding, or an advertisement for another bot feature. It is also false when the section describes the review RUN rather than its findings: the configuration or profile used, a model or plan name, a run identifier, how many commits were read, or a notice that the bot has already reviewed these commits and names a command to rerun. It is false when it merely expands the detail of a check whose outcome is already carried by a summary tally elsewhere in the same body." '
+      {state: {source: "GitHub pull request review body, collapsed section headings"},
+       questions: (to_entries | map({key: ("h\(.key)"), value: {type: "noul",
+         instructions: {question: $q, label: .value},
+         criteria: {"true": $ct, "false": $cf}}}) | from_entries)}' \
+    | JEV_TIMEOUT="${JEV_TIMEOUT:-8}" "$jev" - 2>/dev/null) \
+    || { echo "(jev: unavailable -- call failed; verdict unchanged)"; return 0; }
+
+  # Only headings HIDDEN_RE did NOT already catch: the question is what a
+  # classifier adds over the patterns, not whether it agrees with them.
+  local flagged="" i=0 lbl val
+  while IFS= read -r lbl; do
+    val=$(printf '%s\n' "$out" | jq -r --arg k "h$i" '.[$k].noul // empty' 2>/dev/null)
+    i=$((i+1))
+    [ -n "$val" ] || continue
+    awk -v v="$val" 'BEGIN{exit !(v >= 0.5)}' || continue
+    printf '%s\n' "$lbl" | grep -qE "$HIDDEN_RE" && continue
+    flagged="${flagged}    ${val}  ${lbl}
+"
+  done <<EOF
+$headings
+EOF
+
+  if [ -n "$flagged" ]; then
+    echo "(jev: would HOLD -- $n heading(s) checked, these are unrecognised by the patterns)"
+    printf '%s' "$flagged"
+    echo "(jev: SHADOW MODE -- verdict unchanged. Given veto power this would be RESULT=HOLD.)"
+    # Every would-HOLD is a candidate gold-set row: a label the patterns did not
+    # know and the classifier thinks is work. Whether it was right is decided
+    # later by a person reading the PR, so the label is recorded verbatim with
+    # the score and where it came from. This file is the only way the two-week
+    # shadow period produces anything; without it the run is just noise on a
+    # terminal that nobody re-reads.
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      printf '%s' "$line" | awk -v repo="$REPO" -v pr="$PR" -v head="$HEAD" '
+        { v=$1; $1=""; sub(/^[ \t]+/,""); printf "%s\t%s\t%s\t%s\t%s\n", repo, pr, head, v, $0 }' \
+      | while IFS=$'\t' read -r rp pn hd nv lb; do
+          jq -cn --arg ts "$(date -u +%FT%TZ)" --arg repo "$rp" --arg pr "$pn" --arg head "$hd" \
+                 --arg noul "$nv" --arg label "$lb" --arg model "${JEV_MODEL:-jev-1.13.0}" \
+            '{ts:$ts, repo:$repo, pr:($pr|tonumber), head:$head, model:$model,
+               noul:($noul|tonumber), label:$label, verdict_without_jev:"CLEAN", adjudicated:null}' \
+            >> "${JEV_SHADOW_LOG:-$HOME/side-project/jev-research/data/shadow-holds.jsonl}"
+        done
+    done <<SHADOWEOF
+$flagged
+SHADOWEOF
+  else
+    echo "(jev: checked $n heading(s), nothing the patterns missed)"
+  fi
+}
+
 # Review/comment bodies in $1 -> prints the reported outcome line, then any
 # bucket that withholds CLEAN (with its RESULT= line). Returns 0 when it
 # decided the verdict, 1 when nothing here blocks CLEAN.
@@ -440,6 +530,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
         exit 0
       fi
 
+      jev_shadow "$bodies"
       echo "RESULT=CLEAN"
       exit 0
     fi
