@@ -322,9 +322,17 @@ genuinely clean new-format review has been captured and its shape is known.
 three rounds each fix the previous round's fix, the defect is not in the code
 being patched, it is in what the code is trying to decide.
 
-**The subtraction:** the ledger already said it, two entries before this one —
-*a redundant check that can be false is a second failure mode, not a second line
-of defence.* The clean round arrived by deleting the check, not by fixing it.
+**The subtraction:** *a redundant check that can be false is a second failure
+mode, not a second line of defence.* The clean round arrived by deleting the
+check, not by fixing it.
+
+This sentence used to be introduced as something "the ledger already said, two
+entries before this one". It did not. Grepping the file for the rule returns
+exactly this line and nothing else — it lives in the operator's own notes, not
+here, and the citation was pointing at an entry that has never contained it. A
+false cross-reference inside the ledger is the same defect as entry 6, which is
+about this file claiming a guard the code did not have, so it is corrected in
+place rather than quietly deleted.
 
 ---
 
@@ -378,14 +386,60 @@ above this one is about exactly that difference.
 
 ---
 
+## 11. A review object that says no review happened, read as a pass
+
+**2026-09-20, `Nanako0129/NyanCogs#31`, head `8f6eee6`.** `RESULT=CLEAN` over a
+pull request nothing had read.
+
+```
+copilot-pull-request-reviewer[bot]  COMMENTED  commit=8f6eee6  len=119
+"Copilot was unable to review this pull request because the user who
+ requested the review has reached their quota limit."
+```
+
+A review object on the head commit with an empty inline set satisfies this
+gate's clean condition exactly. The body carried none of the negative markers
+the other guards look for — no `Suppressed comments`, no `Comments generated`,
+no `Findings:`, no `###` line — because there was no review to describe.
+
+**Every earlier entry hid findings inside a real review. This one passed a pull
+request that was never reviewed**, and said so in the output while reporting a
+pass. Anything auto-merging on `CLEAN` would have merged unreviewed code with
+the reason printed two lines above the verdict.
+
+**Shape:** every guard in that file named a specific bad thing, so each new
+vendor message arrived as a fresh clean verdict. A blocklist cannot be finished.
+
+**Now:** a review body must carry a `^### ` status line, and a review object at
+head without one is `RESULT=NOT_REVIEWED` with the body printed. The marker was
+chosen by measuring 41 bodies across nine repositories and both formats in
+circulation — the older `### 🟢 Approval recommended` shape with a `Comments
+generated:` count, and `ccr-overview-v2` with `Findings:` — because each of
+those two fields is absent from one format and keying on either would have
+failed closed on half the fleet. All 40 real reviews carry the `###` line; the
+quota message is the only body without one.
+
+**The operational part is not local to one pull request.** The Copilot quota is
+per requesting user, so when it is exhausted every repository on the Copilot
+side of the routing table loses its automatic reviewer at the same moment. The
+fallback is a top-level `@coderabbitai review` comment, which works on exactly
+those repositories because their CodeRabbit auto review is disabled and the
+manual command is the documented escape hatch.
+
+**Found by another session hitting it on its own pull request**, and again not
+by the person who wrote the code.
+
+---
+
 ## What the pattern is
 
 Most of them are the same sentence with different nouns: **an empty set was read
 as a clean result.** The set came back empty because the filter was wrong,
 because the findings were parked somewhere the count did not reach, because the
 work had not finished yet, because a read failed rather than returning nothing,
-or because the vendor changed its wording and every pattern stopped matching at
-once.
+because the vendor changed its wording and every pattern stopped matching at
+once, or because the reviewer never ran and the object it left behind still
+satisfied every structural test for one.
 
 **Do not keep a tally here, and do not enumerate the entries.** Both go stale on
 the next entry, and both have. An earlier version of this paragraph said "four
