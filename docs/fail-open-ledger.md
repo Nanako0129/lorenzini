@@ -1,8 +1,10 @@
 # Fail-open ledger
 
-Every gate bug found in this repository, in order. Six entries; entry 6 holds
-four separate defects. Every one of them failed the same direction: it reported
-**pass**, or it claimed a guard existed that did not.
+Every gate bug found in this repository, in order. Several entries hold more
+than one defect; no count is kept, because the last two attempts at one went
+stale within a day and a reviewer caught both. Every one of them failed the
+same direction: it reported **pass**, or it claimed a guard existed that did
+not.
 
 A gate that fails closed wastes a poll. A gate that fails open merges a defect
 and tells you it was fine. Only one of those is recoverable, which is why the
@@ -176,24 +178,311 @@ code it described — including, twice, the person who wrote both.
 
 ---
 
+## 7. Copilot changed its body format, and the gate did not notice
+
+**2026-09-19, `Nanako0129/lorenzini#1`.** Reported `RESULT=CLEAN` on a review
+that said *"Needs a closer look"* and listed four issues.
+
+Copilot shipped a new review body (marker `ccr-overview-v2`). Every string the
+Copilot gate keyed on vanished in the same stroke:
+
+| Pattern | Occurrences in the new body |
+|---|---|
+| `Comments generated` | 0 |
+| `Suppressed comments` | 0 |
+| `Files reviewed` | 0 |
+
+Nothing errored. The suppressed-findings gate from entry #2 and the miscount
+cross-check added hours earlier in entry #6 both silently stopped applying, and
+the verdict fell through to `CLEAN`.
+
+The findings were in a per-file table cell:
+
+> `README.md` | ... | **Two moderate issues: enforcement requirements and the
+> `RESULT=CLEAN` condition are unclear. Two nits: the star-threshold wording and
+> ruleset terminology are technically inaccurate.**
+
+alongside `**Findings:** None`, which counts inline findings just as the old
+count did.
+
+**This was predicted.** The independent review recorded in entry #6 closed with
+exactly this: every pattern in these scripts encodes one day's rendering, and
+when the rendering moves they stop matching with no error and the gate degrades
+into a machine that always says `CLEAN`. It named the reviewer's own count as
+the only signal that moves when the vendor moves. That count is what disappeared.
+
+**Shape:** a pattern that no longer matches is indistinguishable from a finding
+that is not there. The fifth variation of the same empty set.
+
+**Now:** `RESULT=TABLE` withholds the pass when the per-file table reports
+anything. The Findings column is located by its **header**, not by position —
+the older format's table is `| File | Description |`, and reading its last
+column as findings reported a clean pull request as having one. A gate that
+cries wolf on clean runs gets edited away, so a fail-closed bug is not free
+either.
+
+**What it does not fix:** the next format change. Nothing here detects that the
+patterns stopped matching; it only adds one more pattern. The honest mitigation
+is the cross-check in #6 — a number the vendor maintains, disagreeing with a
+number we compute — and it needs re-finding in each new format rather than
+assuming the old spelling survived.
+
+---
+
+## 8. The same bug, one round later, because the fix added a pattern
+
+**2026-09-19, `Nanako0129/lorenzini#1`, round four.** Reported `RESULT=CLEAN` on
+a review whose body said `**Findings:** 1`.
+
+Entry #7 ended by naming what its own fix did not do: *"nothing here detects
+that the patterns stopped matching; it only adds one more pattern."* One round
+later the same body format produced findings in a place the new pattern did not
+look — no per-file table this time, and instead:
+
+```
+### 🔵 Needs a closer look
+**Findings:** 1
+Open (1)
+Previously missed (2)   <- findings in code unchanged since the last review
+```
+
+`Previously missed` is the sharpest of these: those findings can never become
+inline comments, because the lines they concern were not touched. Zero inline
+comments at head was therefore correct and meaningless at the same time.
+
+Both findings were real, and one of them was the N-places failure for the third
+time: `RESULT=TABLE` had been added to the explanatory verdict table in
+`SKILL.md` and not to the operational one lower in the same file.
+
+**Now:** the cross-check reads the vendor's own number in whatever spelling the
+format uses — `Comments generated: N`, `**Findings:** N`, `Open (N)`,
+`Previously missed (N)` — and takes the largest. Their relationship is not
+modelled, because modelling it means understanding a format that will change
+again; the maximum over-counts at worst, and over-counting withholds a pass
+while under-counting grants one.
+
+**Shape:** a fix that enumerates buckets is a fix that is already incomplete.
+The bucket list is the vendor's to change, and it does not announce changes.
+
+**Round five found the fix's own latent bug.** The awk that locates the Findings
+column bounded its scan with `< NF` instead of `<= NF`. A Markdown table may omit
+the trailing pipe, which drops awk's empty final field; the Findings header then
+sits at `i == NF`, is never found, and every data row is skipped. Copilot's
+current tables do carry the trailing pipe, which is exactly why this passed the
+tests written for it — a fail-open held back by one character of someone else's
+formatting.
+
+That is three self-inflicted findings across five rounds, in three consecutive
+rounds. Not a majority, so the loop is still converging rather than diverging,
+but the trend is the thing to watch: the findings are no longer about the
+original work, they are about the fixes. The rule from the divergence section
+applies at the next one — if round six also finds a defect introduced by round
+five, stop point-fixing and take the whole file structurally instead.
+
+**The general lesson, now paid for twice:** prefer a signal the vendor maintains
+over a pattern you maintain. A number they publish about their own work moves
+when they move; a regex you wrote about their output does not, and its silence
+is indistinguishable from good news.
+
+---
+
+## 9. Three rounds patching a parser, when the question was wrong
+
+**2026-09-19, `Nanako0129/lorenzini#1`, rounds four to six.** The stop condition
+written in entry 8 fired: round six found a defect introduced by round five,
+which had found one introduced by round four.
+
+All three were in the same hand-rolled Markdown table parser added to read the
+`ccr-overview-v2` body: the wrong column, then `< NF` where the trailing pipe is
+optional, then a leading pipe assumed to be present. Findings clustering in one
+function rather than spread across the work — the divergence signature, and it
+took being written down in advance to be acted on rather than argued with.
+
+**The parser was answering the wrong question.** Across five captured
+new-format bodies, every single one carries `### 🔵 Needs a closer look` and a
+substantive one-line summary, and **not one is a confirmed clean review**. There
+was no clean shape to recognise. Each round added a pattern for where findings
+had appeared last time, which is a list the vendor owns and does not announce
+changes to.
+
+`Syrtis-Agent#4` makes the cost concrete. This script reported it `CLEAN`, and
+that verdict was relayed to the user as one of five clean pull requests ready to
+merge. Its summary line read: *"The configuration will not automatically
+re-enable CodeRabbit reviews after the repository reaches ten stars."* A real
+observation, with `Findings: None`, no per-file Findings column, and zero inline
+comments. Three of those five carried substantive comments; the report said all
+five were clean.
+
+**Now:** the parser is deleted. A body in this format returns `RESULT=UNREAD`
+and prints the review for a person to read. Not a pass, not a failure — an
+admission. The branch carries an explicit condition for its own removal: once a
+genuinely clean new-format review has been captured and its shape is known.
+
+**Shape:** patching the place a finding appeared is a fix for the last one. When
+three rounds each fix the previous round's fix, the defect is not in the code
+being patched, it is in what the code is trying to decide.
+
+**The subtraction:** *a redundant check that can be false is a second failure
+mode, not a second line of defence.* The clean round arrived by deleting the
+check, not by fixing it.
+
+This sentence used to be introduced as something "the ledger already said, two
+entries before this one". It did not. Grepping the file for the rule returns
+exactly this line and nothing else — it lives in the operator's own notes, not
+here, and the citation was pointing at an entry that has never contained it. A
+false cross-reference inside the ledger is the same defect as entry 6, which is
+about this file claiming a guard the code did not have, so it is corrected in
+place rather than quietly deleted.
+
+---
+
+## 10. The gate could not see the other reviewer, on its own pull request
+
+**2026-09-20, `Nanako0129/lorenzini#2`.** Three real findings sat unresolved
+through a `NITPICKS` verdict and a `SUGGESTIONS` verdict, and the next round
+would have reported `CLEAN` over them.
+
+lorenzini is 13 stars, so the gate run on its own pull requests is
+`poll-coderabbit.sh`, which filters review comments to `coderabbitai[bot]`.
+**Copilot reviews this repository too.** Its three findings at commit `058c1d9`
+were invisible to every verdict the branch produced, and they were found by
+listing the review threads by hand, not by anything in the script.
+
+Two of the three were defects no CodeRabbit round raised:
+
+- `sort -u` on the collapsed-section headings collapsed two distinct `<details>`
+  sections sharing a `<summary>` into one. Measured on a three-section body with
+  one repeated heading: the pipeline emitted **2**, so one section was never
+  sent to the classifier and the run printed *"checked 2 of 2 heading(s)"* over
+  it. Deduplicating the input to a counting gate turns a duplicate into an
+  absence.
+- The shadow-log append was unchecked, so an unwritable parent lost the only
+  persistent record of a would-HOLD while the terminal still printed the
+  candidate — with `scripts/jev.sh` stating that exact rule for its own log,
+  four files away.
+
+**Shape:** a filter scoped to one reviewer's login cannot distinguish "the other
+reviewer found nothing" from "I never looked". Entry #1 is the same sentence
+about a *wrong* login; this is the same sentence about a *complete* one.
+
+**The premise that failed is the routing, not the filter.** The repository split
+is real — measured the same day, all five under-ten-star repositories carry
+CodeRabbit's own notice that *"Auto reviews are disabled on this repository"* —
+and a first version of this entry claimed the star count routed nothing at all,
+built on a survey that counted a skip notice as evidence of reviewing. A peer
+session refuted it. What is true is narrower and still enough: a hand or
+checkbox trigger can put the non-routed reviewer on any pull request, leaving no
+trace the routed poller reads. `NyanCogs#29` is the other demonstration — auto
+review disabled, something triggered CodeRabbit anyway, three rounds and eight
+inline findings, three of them on lines Copilot's first round never touched.
+
+**Now:** `RESULT=OTHERBOT`, in **both** pollers. Checked last, immediately
+before `CLEAN`, because it is the only gate about a reviewer the script cannot
+read. It does not classify the other bot's findings — parsing a second vendor's
+body format inside this one would be a second gate living in the first — it
+refuses the pass, names the login and the file, and sends the operator to the
+pull request. A thread resolved with a human reply counts as dispositioned, the
+same rule each poller already applies to its own threads.
+
+**This entry was open for one commit, and it is the entry that closed itself.**
+The guard's first live run was against `lorenzini#1`, where it flagged **four
+unresolved Copilot findings that no verdict on that pull request had ever
+mentioned** — the blind spot was still open, on this repository, at the moment
+the code to detect it was written. Two were stale. Two were live defects in
+`poll-copilot.sh`: a `head -14` that truncated the output of the "a human must
+read this" verdict past where a per-file table puts its findings, and a format
+check that listed two literal markers for the *unclean* format and therefore
+fell through to `CLEAN` on any body that was neither that nor the old format.
+The second is the blocklist problem sitting inside the branch written to close a
+fail-open, which is this ledger in miniature.
+
+**Two bugs while building the guard, both the failure it exists to prevent.**
+Inside jq's `index(...)` the input is the filter's own input, not the
+surrounding object, so `$owned | index(.author.login)` indexed the owned array
+with the string `"author"` and aborted the expression — against live data that
+prints nothing and counts zero. Caught by a unit test, not by a live run. Then
+`grep -c` printed `0` *and* exited 1, so a `|| echo 0` fallback appended a
+second zero, the numeric test failed with `integer expected`, and the run fell
+through to `CLEAN`: a guard against a fail-open, failing open, on its first live
+run against a real pull request.
+
+---
+
+## 11. A review object that says no review happened, read as a pass
+
+**2026-09-20, `Nanako0129/NyanCogs#31`, head `8f6eee6`.** `RESULT=CLEAN` over a
+pull request nothing had read.
+
+```
+copilot-pull-request-reviewer[bot]  COMMENTED  commit=8f6eee6  len=119
+"Copilot was unable to review this pull request because the user who
+ requested the review has reached their quota limit."
+```
+
+A review object on the head commit with an empty inline set satisfies this
+gate's clean condition exactly. The body carried none of the negative markers
+the other guards look for — no `Suppressed comments`, no `Comments generated`,
+no `Findings:`, no `###` line — because there was no review to describe.
+
+**Every earlier entry hid findings inside a real review. This one passed a pull
+request that was never reviewed**, and said so in the output while reporting a
+pass. Anything auto-merging on `CLEAN` would have merged unreviewed code with
+the reason printed two lines above the verdict.
+
+**Shape:** every guard in that file named a specific bad thing, so each new
+vendor message arrived as a fresh clean verdict. A blocklist cannot be finished.
+
+**Now:** a review body must carry a `^### ` status line, and a review object at
+head without one is `RESULT=NOT_REVIEWED` with the body printed. The marker was
+chosen by measuring 41 bodies across nine repositories and both formats in
+circulation — the older `### 🟢 Approval recommended` shape with a `Comments
+generated:` count, and `ccr-overview-v2` with `Findings:` — because each of
+those two fields is absent from one format and keying on either would have
+failed closed on half the fleet. All 40 real reviews carry the `###` line; the
+quota message is the only body without one.
+
+**The operational part is not local to one pull request.** The Copilot quota is
+per requesting user, so when it is exhausted every repository on the Copilot
+side of the routing table loses its automatic reviewer at the same moment. The
+fallback is a top-level `@coderabbitai review` comment, which works on exactly
+those repositories because their CodeRabbit auto review is disabled and the
+manual command is the documented escape hatch.
+
+**Found by another session hitting it on its own pull request**, and again not
+by the person who wrote the code.
+
+---
+
 ## What the pattern is
 
-Four of the five are the same sentence with different nouns: **an empty set was
-read as a clean result.** Empty because the filter was wrong (#1), because the
-findings were somewhere else (#2, #4), because the work had not finished yet
-(#3, #5).
+Most of them are the same sentence with different nouns: **an empty set was read
+as a clean result.** The set came back empty because the filter was wrong,
+because the findings were parked somewhere the count did not reach, because the
+work had not finished yet, because a read failed rather than returning nothing,
+because the vendor changed its wording and every pattern stopped matching at
+once, or because the reviewer never ran and the object it left behind still
+satisfied every structural test for one.
+
+**Do not keep a tally here, and do not enumerate the entries.** Both go stale on
+the next entry, and both have. An earlier version of this paragraph said "four
+of the five" and was overtaken within a day. Its replacement dropped the tally
+but kept a list of entry numbers, which stopped at #7 while the ledger grew to
+#9 -- so the paragraph forbidding a count was itself carrying three, and a
+reviewer caught that too. An entry number, like a count, is a contract with a
+second home. Name the mechanism; the entries are above and they are numbered.
 
 The defence is not vigilance. It is that the default answer to "I found nothing"
 is *keep looking*, and only an explicit statement of completion ends the wait.
-Written as code rather than as a habit, because the habit failed five times.
+That is written as code rather than kept as a habit, because the habit is what
+failed every time listed above.
 
 Two consequences worth keeping in view:
 
-- **Fixing a fail-open can open another one.** #3 was introduced while fixing a
-  real bug, and #5's fix had a symmetric trap waiting inside it. Any change to
-  the completion logic needs the existing regression cases run, not just the new
-  one.
-- **None of these were found by the person who wrote the code.** Four came from
-  other sessions or from the user; one came from the reviewer itself. Testing
-  covers the shapes you already imagined, which is exactly the set that does not
-  contain your next bug.
+- **Fixing a fail-open can open another one.** At least one entry here was
+  introduced while fixing a real bug, and another's fix had a symmetric trap
+  waiting inside it. Any change to the completion logic needs the existing
+  regression cases run, not just the new one.
+- **None of these were found by the person who wrote the code.** They came from
+  other sessions, from the user, and in one case from the reviewer itself.
+  Testing covers the shapes you already imagined, which is exactly the set that
+  does not contain your next bug.
