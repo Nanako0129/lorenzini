@@ -376,7 +376,7 @@ trace the routed poller reads. `NyanCogs#29` is the other demonstration — auto
 review disabled, something triggered CodeRabbit anyway, three rounds and eight
 inline findings, three of them on lines Copilot's first round never touched.
 
-**Now:** `RESULT=OTHERBOT count=N`, in **both** pollers. Checked last, immediately
+**Now:** `RESULT=OTHERBOT`, in **both** pollers. Checked last, immediately
 before `CLEAN`, because it is the only gate about a reviewer the script cannot
 read. It does not classify the other bot's findings — parsing a second vendor's
 body format inside this one would be a second gate living in the first — it

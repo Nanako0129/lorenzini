@@ -21,8 +21,8 @@
 #   RESULT=MISCOUNT claimed=N counted=M   Copilot's body reports more comments than were found
 #   RESULT=UNREAD format=X        a review format with no known clean shape -- a human must read it
 #   RESULT=NOT_REVIEWED           a review object at HEAD whose body is not a verdict (e.g. quota exhausted)
-#   RESULT=OTHERBOT count=N       Copilot is clean, but N undispositioned findings on this PR
-#                                 belong to a reviewer this gate does not read
+#   RESULT=OTHERBOT              Copilot is clean, but this PR carries undispositioned findings
+#                                 from a reviewer this gate does not read (listed above)
 #   RESULT=TIMEOUT                no review in time (Copilot slow, or not enabled for this account)
 #   RESULT=ERROR ...              draft PR, or could not resolve repo/PR/tools
 #
@@ -342,15 +342,37 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
       #
       # Delete nothing here when a clean new-format sample appears: ADD its
       # shape to the case below. The default must stay UNREAD.
+      # ANCHORED TO THE STATUS LINE, not to the phrase anywhere in the body.
+      # `*"Approval recommended"*` matched a "### 🟡 Changes recommended" body
+      # that mentioned the phrase further down -- in its own per-file table, or
+      # in a quoted suggestion -- which could then satisfy the zero-count and
+      # complete-ratio checks and pass as CLEAN. Raised by CodeRabbit on
+      # lorenzini#1, in the outside-diff bucket, because the lines it is about
+      # were not in that round's diff.
+      #
+      # The comment three paragraphs up already said the shape was
+      # "### 🟢 Approval recommended"; the code matched something looser. This
+      # is not a new guard, it is the code being made to say what the contract
+      # above it already claimed.
+      #
+      # DO NOT DROP THE gen/ratio CHECKS AS REDUNDANT. Measured 2026-09-21:
+      # NyanCogs#30's ccr-overview-v2 body carries the SAME
+      # "### 🟢 Approval recommended" line, so the status line does not
+      # distinguish the two formats at all. What keeps ccr-overview-v2 -- which
+      # has no verified clean sample -- out of clean_shape is that it spells its
+      # counts "Findings: None" instead of "Comments generated: 0" and carries
+      # no "Files reviewed: N/N". That exclusion is therefore load-bearing and
+      # accidental-looking, which is exactly the kind of check that gets
+      # simplified away by someone reading the status line and assuming it is
+      # the discriminator.
       clean_shape=0
-      case "$body" in
-        *"Approval recommended"*)
-          gen=$(printf '%s\n' "$body" | grep -oE 'Comments generated:[*[:space:]]*[0-9]+' | grep -oE '[0-9]+' | tail -1)
-          ratio=$(printf '%s\n' "$body" | grep -oE 'Files reviewed:[*[:space:]]*[0-9]+/[0-9]+' | grep -oE '[0-9]+/[0-9]+' | tail -1)
-          if [ "${gen:-x}" = "0" ] && [ -n "$ratio" ] && [ "${ratio%%/*}" = "${ratio##*/}" ]; then
-            clean_shape=1
-          fi ;;
-      esac
+      if printf '%s\n' "$body" | grep -qE '^### 🟢 Approval recommended[[:space:]]*$'; then
+        gen=$(printf '%s\n' "$body" | grep -oE 'Comments generated:[*[:space:]]*[0-9]+' | grep -oE '[0-9]+' | tail -1)
+        ratio=$(printf '%s\n' "$body" | grep -oE 'Files reviewed:[*[:space:]]*[0-9]+/[0-9]+' | grep -oE '[0-9]+/[0-9]+' | tail -1)
+        if [ "${gen:-x}" = "0" ] && [ -n "$ratio" ] && [ "${ratio%%/*}" = "${ratio##*/}" ]; then
+          clean_shape=1
+        fi
+      fi
       if [ "$clean_shape" != "1" ]; then
         case "$body" in
           *ccr-overview-v2*|*"Copilot review overview"*) fmt=ccr-overview-v2 ;;
@@ -483,7 +505,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
         printf '%s\n' "$fbody_hits"
         echo "------------------------------------------------------------"
         echo "Open the PR and read that review in full, then disposition each finding."
-        echo "RESULT=OTHERBOT count=$(( ${n_foreign:-0} + n_fbody ))"
+        echo "RESULT=OTHERBOT"
         exit 0
       fi
 
@@ -496,7 +518,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
         printf '%s\n' "$foreign"
         echo "------------------------------------------------------------"
         echo "Open them on the PR and disposition each one: reply, then resolve."
-        echo "RESULT=OTHERBOT count=$n_foreign"
+        echo "RESULT=OTHERBOT"
         exit 0
       fi
 
