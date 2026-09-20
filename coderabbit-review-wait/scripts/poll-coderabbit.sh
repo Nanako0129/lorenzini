@@ -16,8 +16,8 @@
 #   RESULT=SUGGESTIONS count=N    inline comments on head, or CHANGES_REQUESTED
 #   RESULT=MISCOUNT claimed=N counted=M   the reviewer's own count exceeds ours -- the gap is the finding
 #   RESULT=UNREPLIED count=N      N resolved threads carry no human reply
-#   RESULT=OTHERBOT count=N       CodeRabbit is clean, but N undispositioned findings on this PR
-#                                 belong to a reviewer this gate does not read
+#   RESULT=OTHERBOT              CodeRabbit is clean, but this PR carries undispositioned
+#                                 findings from a reviewer this gate does not read
 #   RESULT=TIMEOUT                no review of head in time
 #   RESULT=ERROR ...              draft PR, or could not resolve repo/PR/tools
 #
@@ -785,7 +785,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
         printf '%s\n' "$fbody_hits"
         echo "------------------------------------------------------------"
         echo "Open the PR and read that review in full, then disposition each finding."
-        echo "RESULT=OTHERBOT count=$(( ${n_foreign:-0} + n_fbody ))"
+        echo "RESULT=OTHERBOT"
         exit 0
       fi
 
@@ -798,7 +798,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
         printf '%s\n' "$foreign"
         echo "------------------------------------------------------------"
         echo "Open them on the PR and disposition each one: reply, then resolve."
-        echo "RESULT=OTHERBOT count=$n_foreign"
+        echo "RESULT=OTHERBOT"
         exit 0
       fi
 
