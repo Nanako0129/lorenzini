@@ -58,6 +58,13 @@ set -u
 # was reported CLEAN (payload: jev-research/data/cr-bodies.jsonl). A file that
 # was never read cannot have produced findings, so a zero count over it says
 # nothing. It withholds CLEAN like the other buckets.
+# The reviewer this gate owns, REST spelling. Defined up here with the other
+# constants rather than beside the argument parsing, because the helpers below
+# close over it and they are meant to be sourceable: when it was set after the
+# source guard, sourcing the file left it empty and notice_mutated silently
+# produced nothing -- a helper that cannot fail loudly, in a file about guards
+# that fail silently. Caught by a mutation run, not by a passing test.
+BOT="coderabbitai[bot]"
 HIDDEN_RE='(Nitpick comments|Outside diff range comments|Duplicate comments|Files skipped from review[^(]*) \(([0-9]+)\)'
 
 # A FOREIGN reviewer's body markers: the unambiguous statements that it found
@@ -199,6 +206,27 @@ rate_limited() {
   echo "Polling cannot resolve this, so it is reported rather than waited out."
   echo "Resets in $(( (reset - now + 59) / 60 )) minute(s), at $(date -r "$reset" '+%H:%M:%S' 2>/dev/null || echo "$reset")."
   return 1
+}
+
+# Issue-comments payload on stdin -> "yes" when the bot's most recent notice has
+# been rewritten since it was posted, "no" otherwise.
+#
+# Named and sourceable for the same reason classify_foreign is: a test carrying
+# its own copy of this jq passes while the shipping copy rots. That has now
+# happened four times in this repository, most recently when a mutation run
+# against this very check walked straight past an inlined duplicate.
+notice_mutated() {
+  jq -r --arg b "$BOT" '[.[][] | select(.user.login == $b)] | last
+     | if (.updated_at // "") != (.created_at // "") then "yes" else "no" end' 2>/dev/null
+}
+
+# Issue-comments payload on stdin -> count of review triggers at or after $1.
+# "Review triggered" is CodeRabbit's own acknowledgement and catches the case
+# where the trigger came from the checkbox in its notice, which posts no comment
+# of the operator's own.
+triggers_since() {
+  jq -r --arg c "$1" '[.[][] | select((.created_at // "") >= $c)
+     | select((.body // "") | test("@coderabbitai +(full +)?review|Review triggered"))] | length' 2>/dev/null
 }
 
 # Reviews payload on stdin -> one "state login" line per FOREIGN review at $1.
@@ -450,7 +478,6 @@ classify_bodies() {
 (return 0 2>/dev/null) && return 0
 
 TIMEOUT=900 INTERVAL=20 PR="" REPO_ARG="" REQUEST=0
-BOT="coderabbitai[bot]"
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --repo)     REPO_ARG="${2:-}";    shift 2 ;;
@@ -615,6 +642,35 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   # CodeRabbit posts a fresh comment whenever it acts.
   last_note=$(printf '%s\n' "$icomments" | jq -r --arg b "$BOT" \
     '[.[][] | select(.user.login == $b)] | last | .body // ""' 2>/dev/null)
+
+  # A SKIP OR PAUSE NOTICE IS NOT TERMINAL ON FIRST SIGHT, because the comment
+  # it is read from is MUTABLE and may be about to become something else.
+  #
+  # Measured on Nanako0129/NyanCogs#33, 2026-09-20, by the
+  # messagewatch-rule-based-alerts session:
+  #
+  #   18:03:31  coderabbitai[bot]  created  "Review skipped -- auto reviews are disabled"
+  #   18:03:32  Nanako0129         created  "@coderabbitai review"
+  #   18:03:37  coderabbitai[bot]  created  "Action performed / Review triggered."
+  #   18:03:44  coderabbitai[bot]  UPDATED THE 18:03:31 COMMENT
+  #                                -> "Currently processing new changes in this PR..."
+  #
+  # The skip notice and the in-progress notice are THE SAME COMMENT OBJECT.
+  # This file already documents that CodeRabbit edits the in-progress notice in
+  # place; what it did not say is that the comment's earlier content can be a
+  # skip. A poller reading it inside that thirteen-second window concluded
+  # "skipped" about a run that was starting, and exited 2.
+  #
+  # This bites hardest on the five repositories where auto review is disabled:
+  # every round there BEGINS with a skip notice and a manual trigger, so the
+  # racing shape is the normal shape, not an edge case.
+  #
+  # Two independent signals, either of which keeps the poll alive:
+  skip_mutated=$(printf '%s\n' "$icomments" | notice_mutated)
+  # A trigger newer than the notice means a run was asked for against it.
+  skip_created=$(printf '%s\n' "$icomments" | jq -r --arg b "$BOT" \
+    '[.[][] | select(.user.login == $b)] | last | .created_at // ""' 2>/dev/null)
+  trigger_after=$(printf '%s\n' "$icomments" | triggers_since "$skip_created")
   # PAUSED is a third member of the family that SKIPPED already belongs to, and
   # it was found the same way: a poll sat for twenty minutes on lorenzini#1 and
   # reported TIMEOUT while the most recent bot comment read "Reviews paused".
@@ -624,6 +680,32 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   # TIMEOUT says the verdict may still come. PAUSED says it will not until
   # someone asks. Reported as the same thing, the operator waits for nothing --
   # which is what happened here, for the full twenty minutes.
+  # Applied to PAUSED and SKIPPED alike: both are read from the same mutable
+  # comment, and both are states a manual trigger resolves.
+  if [ "${skip_mutated:-no}" = "yes" ] || [ "${trigger_after:-0}" -ge 1 ] 2>/dev/null; then
+    case "$last_note" in
+      *"Reviews paused"*|*"Review skipped"*)
+        [ "${race_warned:-0}" = "1" ] || {
+          echo "A skip or pause notice is present, but that comment has been edited or a review"
+          echo "was requested after it was written. CodeRabbit rewrites this one comment in place,"
+          echo "so the notice may already be stale. Continuing to poll rather than calling it."
+          race_warned=1
+        }
+        clean_seen=0; sleep "$INTERVAL"; continue ;;
+    esac
+  fi
+  # Still not terminal on the FIRST clean look: confirm it twice, one interval
+  # apart, so a read landing in the gap before the edit cannot decide the run.
+  case "$last_note" in
+    *"Reviews paused"*|*"Review skipped"*)
+      skip_seen=$(( ${skip_seen:-0} + 1 ))
+      if [ "$skip_seen" -lt 2 ]; then
+        echo "Read a skip or pause notice. Confirming once more before reporting it, because"
+        echo "CodeRabbit edits that comment in place and it may be about to change."
+        sleep "$INTERVAL"; continue
+      fi ;;
+    *) skip_seen=0 ;;
+  esac
   case "$last_note" in
     *"Reviews paused"*)
       echo "CodeRabbit has PAUSED automatic reviews on this PR (its most recent comment says so)."

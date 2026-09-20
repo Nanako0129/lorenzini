@@ -20,7 +20,11 @@
 #   RESULT=SUGGESTIONS count=N    Copilot left N inline comments on HEAD (listed above) → fix, push, re-run
 #   RESULT=MISCOUNT claimed=N counted=M   Copilot's body reports more comments than were found
 #   RESULT=UNREAD format=X        a review format with no known clean shape -- a human must read it
-#   RESULT=NOT_REVIEWED           a review object at HEAD whose body is not a verdict (e.g. quota exhausted)
+#   RESULT=NOT_REVIEWED           a review object at HEAD whose body is not a verdict
+#   RESULT=NOT_REVIEWED reason=quota fallback=coderabbit
+#                                 Copilot's quota is out -- it reviewed nothing, and the quota is
+#                                 per USER so every repo on this side is out at once. Switch to
+#                                 CodeRabbit (command printed); do not wait and do not merge.
 #   RESULT=OTHERBOT              Copilot is clean, but this PR carries undispositioned findings
 #                                 from a reviewer this gate does not read (listed above)
 #   RESULT=TIMEOUT                no review in time (Copilot slow, or not enabled for this account)
@@ -195,6 +199,23 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
         echo "------------------------------------------------------------"
         printf '%s\n' "$body"
         echo "------------------------------------------------------------"
+        # QUOTA EXHAUSTION IS NOT A WAIT, IT IS A ROUTING CHANGE.
+        #
+        # The quota is per requesting user, so when it runs out EVERY repository
+        # on the Copilot side of the split loses its automatic reviewer at the
+        # same moment. A caller that reports NOT_REVIEWED and stops leaves the
+        # pull request with no reviewer at all -- and the next person to look
+        # sees a gate that said something other than CLEAN and a branch nobody
+        # is reviewing, which is how unreviewed code gets merged by a human
+        # deciding the tooling is broken.
+        #
+        # So the verdict carries reason=quota for a caller to key on, and the
+        # fallback is printed as the exact command to run rather than described.
+        # CodeRabbit is available on precisely these repositories BECAUSE their
+        # auto review is disabled: the manual command is the documented escape
+        # hatch, and it is unaffected by Copilot's quota.
+        quota=0
+        case "$body" in *"reached their quota limit"*) quota=1 ;; esac
         case "$body" in
           *"reached their quota limit"*)
             echo "This is the quota message: the review was never performed, and the quota"
@@ -205,7 +226,17 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
             echo "review is disabled and the manual command is the documented escape hatch."
             ;;
         esac
-        echo "RESULT=NOT_REVIEWED"
+        if [ "$quota" = "1" ]; then
+          echo
+          echo "SWITCH REVIEWERS. Do not wait for the quota and do not merge on this verdict:"
+          echo "  gh pr comment $PR --repo $REPO --body '@coderabbitai review'"
+          echo "  bash <skill-dir>/../coderabbit-review-wait/scripts/poll-coderabbit.sh $PR --repo $REPO"
+          echo "The CodeRabbit gate defines a clean pass differently; read it from"
+          echo "coderabbit-review-wait/SKILL.md rather than carrying this one's logic across."
+          echo "RESULT=NOT_REVIEWED reason=quota fallback=coderabbit"
+        else
+          echo "RESULT=NOT_REVIEWED"
+        fi
         exit 0
       fi
 
