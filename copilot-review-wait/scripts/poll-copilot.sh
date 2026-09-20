@@ -102,7 +102,15 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   # --paginate --slurp cannot be combined with gh's own --jq; pipe to jq instead.
   # Without --paginate the reviews endpoint caps at 30 and a long-running PR
   # pushes the newest review onto page 2, where it is invisible.
-  reviews=$(gh api --paginate --slurp "repos/$REPO/pulls/$PR/reviews?per_page=100" 2>/dev/null || printf '[]')
+  # A FAILED READ IS NOT AN EMPTY REVIEW LIST. $reviews feeds the head-keyed
+  # verdict, the body shape check AND the foreign-reviewer body scan, so a
+  # failure here loses both the findings and the evidence that findings exist.
+  # Raised against the sibling script on lorenzini#2 and fixed here by grep.
+  if ! reviews=$(gh api --paginate --slurp "repos/$REPO/pulls/$PR/reviews?per_page=100" 2>/dev/null) \
+     || ! printf '%s\n' "$reviews" | jq -e 'type == "array" and all(.[]; type == "array")' >/dev/null 2>&1; then
+    [ "${rev_warned:-0}" = "1" ] || { echo "Could not read the reviews endpoint. Retrying rather than counting zero reviews."; rev_warned=1; }
+    clean_seen=0; sleep "$INTERVAL"; continue
+  fi
   reviewed=$(printf '%s\n' "$reviews" \
     | jq --arg h "$HEAD" --arg b "$BOT" '[.[][] | select(.user.login == $b and .commit_id == $h)] | length' 2>/dev/null || echo 0)
   if [ "${reviewed:-0}" -ge 1 ]; then
@@ -445,7 +453,13 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
       # their absence reads as "handled". gh supplies $endCursor itself and
       # emits one document per page; `jq -s` merges them back into the single
       # shape the filter below already expects.
-      if ! threads=$(gh api graphql --paginate -f query="query(\$endCursor:String){repository(owner:\"${REPO%%/*}\",name:\"${REPO##*/}\"){pullRequest(number:$PR){reviewThreads(first:100, after:\$endCursor){pageInfo{hasNextPage endCursor} nodes{isResolved comments(first:50){nodes{path author{login __typename}}}}}}}}" 2>/dev/null \
+      # `set -o pipefail` INSIDE the substitution: without it the pipeline takes
+      # jq's status, so a --paginate call that fails AFTER emitting earlier
+      # pages exits 0 and jq -s builds a valid PARTIAL array that passes the
+      # shape check below. Scoped to the subshell because this script has
+      # pipelines that legitimately exit non-zero, `grep -c` with no match
+      # among them.
+      if ! threads=$(set -o pipefail; gh api graphql --paginate -f query="query(\$endCursor:String){repository(owner:\"${REPO%%/*}\",name:\"${REPO##*/}\"){pullRequest(number:$PR){reviewThreads(first:100, after:\$endCursor){pageInfo{hasNextPage endCursor} nodes{isResolved comments(first:50){nodes{path author{login __typename}}}}}}}}" 2>/dev/null \
                      | jq -s '{data:{repository:{pullRequest:{reviewThreads:{nodes:[.[].data.repository.pullRequest.reviewThreads.nodes[]]}}}}}' 2>/dev/null) \
          || ! printf '%s\n' "$threads" | jq -e '.data.repository.pullRequest.reviewThreads.nodes | type == "array"' >/dev/null 2>&1; then
         [ "${thread_warned:-0}" = "1" ] || { echo "Could not read the review threads. Retrying rather than counting zero findings."; thread_warned=1; }
@@ -491,7 +505,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
          | (.user.login // "") as $l | select(($owned | index($l)) | not)
          | "\($l)\t\(.body // "")"] | .[]' 2>/dev/null)
       fbody_hits=$(printf '%s\n' "$fbodies" \
-        | grep -oE '(Nitpick comments|Outside diff range comments|Duplicate comments|Files skipped from review[^(]*) \([0-9]+\)|Actionable comments posted: [1-9][0-9]*' || true)
+        | grep -oE '(Nitpick comments|Outside diff range comments|Duplicate comments|Files skipped from review[^(]*) \([1-9][0-9]*\)|Actionable comments posted: [1-9][0-9]*' || true)
       n_fbody=$(printf '%s\n' "$fbody_hits" | grep -c '[^[:space:]]') || true
 
       if [ "${n_fbody:-0}" -ge 1 ]; then
