@@ -17,10 +17,33 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 source "$ROOT/coderabbit-review-wait/scripts/poll-coderabbit.sh"
 
 pass=0 fail=0
-ok() { # ok <name> <expected> <actual>
+
+# ok <name> <expected> <actual>
+#
+# Compare and record. Prints nothing on success, and on failure prints the name
+# with both values on their own lines so the difference is readable rather than
+# inferred from a diff of two long strings.
+#
+# String comparison, deliberately, even for the counts: an assertion that a
+# verdict is "RESULT=NITPICKS count=3" must fail when the verdict is
+# "RESULT=NITPICKS count=0", and a numeric comparison would need the count
+# extracted first, which is a second parser of the thing under test.
+ok() {
   if [ "$2" = "$3" ]; then pass=$((pass+1));
   else fail=$((fail+1)); printf 'FAIL  %s\n        expected: %s\n        actual:   %s\n' "$1" "$2" "$3"; fi
 }
+
+# verdict <review-body> -> the RESULT= line classify_bodies decided, or empty
+#
+# Empty means classify_bodies found nothing that withholds CLEAN. That is not
+# the same as "clean": the CLEAN verdict itself is granted by the polling loop
+# after several further checks -- the completion marker, unreplied threads, the
+# foreign reviewer -- which need live API state and are asserted separately
+# through the jq helpers rather than through this function.
+#
+# stderr is dropped because classify_bodies prints its excerpts there; the
+# assertions are about the verdict, and the excerpt text is vendor-formatted
+# output that would make every assertion a brittle transcript comparison.
 verdict() { classify_bodies "$1" 2>/dev/null | grep -oE 'RESULT=[A-Z]+( count=[0-9]+)?' | tail -1; }
 
 # --- HIDDEN_RE: the buckets whose findings the reviewer's own count ignores ---
