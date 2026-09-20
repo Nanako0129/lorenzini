@@ -21,6 +21,8 @@
 #   RESULT=MISCOUNT claimed=N counted=M   Copilot's body reports more comments than were found
 #   RESULT=UNREAD format=X        a review format with no known clean shape -- a human must read it
 #   RESULT=NOT_REVIEWED           a review object at HEAD whose body is not a verdict (e.g. quota exhausted)
+#   RESULT=OTHERBOT count=N       Copilot is clean, but N undispositioned findings on this PR
+#                                 belong to a reviewer this gate does not read
 #   RESULT=TIMEOUT                no review in time (Copilot slow, or not enabled for this account)
 #   RESULT=ERROR ...              draft PR, or could not resolve repo/PR/tools
 #
@@ -308,19 +310,67 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
       #
       # Delete this branch once a genuinely clean new-format review has been
       # captured and its shape is known -- not before.
+      # RECOGNISE THE CLEAN SHAPE, NOT THE UNCLEAN ONES. Raised by Copilot on
+      # lorenzini#1 against the version that did the opposite: it listed two
+      # literal markers for the new format and sent those to UNREAD, so a body
+      # that was neither the old format nor those two markers -- a renamed
+      # marker, a third format -- fell through to CLEAN at the bottom of this
+      # block. That is the blocklist problem again, in the branch written to
+      # fix a fail-open.
+      #
+      # Inverting it is only honest if a clean shape has actually been
+      # measured, otherwise CLEAN becomes unreachable and the gate is dead
+      # rather than strict. One has: the older format, on calico-claude#44 and
+      # #45, both reading
+      #
+      #   ### 🟢 Approval recommended
+      #   - **Files reviewed:** 5/5 changed files
+      #   - **Comments generated:** 0
+      #
+      # (#45 spells the count "0 new"). All three parts are required. The
+      # files-reviewed ratio is part of the shape rather than a separate glance
+      # because a body reporting 4/5 has a file nobody read, and a zero finding
+      # count over unread code says nothing -- the same reason CodeRabbit's
+      # "Files skipped from review" withholds CLEAN in the sibling script.
+      #
+      # ccr-overview-v2 still has no clean sample. Every captured one carries a
+      # substantive summary alongside "Findings: None" and zero inline comments,
+      # and Syrtis-Agent#4 was reported CLEAN by this script while its summary
+      # read "The configuration will not automatically re-enable CodeRabbit
+      # reviews after the repository reaches ten stars". So it stays UNREAD, now
+      # by falling through rather than by being named.
+      #
+      # Delete nothing here when a clean new-format sample appears: ADD its
+      # shape to the case below. The default must stay UNREAD.
+      clean_shape=0
       case "$body" in
-        *ccr-overview-v2*|*"Copilot review overview"*)
-          echo
-          echo "This is Copilot's newer review format, and no clean example of it has"
-          echo "been observed. Every captured sample carries a substantive summary"
-          echo "line with Findings: None and no inline comments, so an empty count"
-          echo "here means nothing. Read the review:"
-          echo "------------------------------------------------------------"
-          printf '%s\n' "$body" | sed 's/<[^>]*>//g' | grep -vE '^[[:space:]]*$' | head -14
-          echo "------------------------------------------------------------"
-          echo "RESULT=UNREAD format=ccr-overview-v2"
-          exit 0 ;;
+        *"Approval recommended"*)
+          gen=$(printf '%s\n' "$body" | grep -oE 'Comments generated:[*[:space:]]*[0-9]+' | grep -oE '[0-9]+' | tail -1)
+          ratio=$(printf '%s\n' "$body" | grep -oE 'Files reviewed:[*[:space:]]*[0-9]+/[0-9]+' | grep -oE '[0-9]+/[0-9]+' | tail -1)
+          if [ "${gen:-x}" = "0" ] && [ -n "$ratio" ] && [ "${ratio%%/*}" = "${ratio##*/}" ]; then
+            clean_shape=1
+          fi ;;
       esac
+      if [ "$clean_shape" != "1" ]; then
+        case "$body" in
+          *ccr-overview-v2*|*"Copilot review overview"*) fmt=ccr-overview-v2 ;;
+          *"Approval recommended"*)                      fmt=approval-but-not-clean-shape ;;
+          *)                                             fmt=unrecognised ;;
+        esac
+        echo
+        echo "This review body does not match any shape verified to mean a clean pass,"
+        echo "so an empty inline count over it proves nothing. Read the review:"
+        echo "------------------------------------------------------------"
+        # The WHOLE body. A head -14 here was raised on lorenzini#1 and is a
+        # real hole: the per-file table can place findings past the cutoff, so
+        # the truncation hid exactly the cells that made the format unreadable.
+        # A review body is a few kilobytes; there is nothing to save by cutting
+        # it, and this branch exists precisely because a person must read it.
+        printf '%s\n' "$body" | sed 's/<[^>]*>//g' | grep -vE '^[[:space:]]*$'
+        echo "------------------------------------------------------------"
+        echo "RESULT=UNREAD format=$fmt"
+        exit 0
+      fi
 
       # Copilot is documented never to submit CHANGES_REQUESTED, and none has
       # been observed. If that ever changes, a zero-comment CHANGES_REQUESTED
@@ -330,6 +380,57 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
       if [ "${changes:-0}" -ge 1 ]; then
         echo "Copilot submitted CHANGES_REQUESTED on this commit with no inline comments."
         echo "RESULT=SUGGESTIONS count=0"
+        exit 0
+      fi
+
+      # THE REVIEWER THIS GATE DOES NOT OWN. The symmetric half of the hole
+      # recorded as entry 10 of docs/fail-open-ledger.md and closed in the
+      # CodeRabbit poller first: this script filters to Copilot's two logins, so
+      # on a pull request a second reviewer also looked at, that reviewer's
+      # findings are invisible to every verdict produced here.
+      #
+      # The routing does not prevent it. All five repositories on this side
+      # carry CodeRabbit's own "Auto reviews are disabled on this repository"
+      # notice, so the split is real -- but a hand or checkbox trigger puts
+      # CodeRabbit on any of them without leaving a trace this poller reads.
+      # NyanCogs#29 is the measured case: auto review disabled, CodeRabbit
+      # triggered anyway, three rounds and eight inline findings, three of them
+      # on lines Copilot's first round never touched. This gate would have said
+      # CLEAN.
+      #
+      # Checked last, because it is the only gate about a reviewer this script
+      # cannot read. It does not classify the other bot's findings -- parsing a
+      # second vendor's body format here would be a second gate inside this one
+      # -- it refuses the pass and names the login and the file. A thread
+      # resolved with a human reply counts as dispositioned.
+      #
+      # GraphQL omits the "[bot]" suffix REST carries, so the owned set is
+      # spelled the GraphQL way, and Copilot needs BOTH of its logins here for
+      # the same reason the comment filter above does.
+      threads=$(gh api graphql -f query="query{repository(owner:\"${REPO%%/*}\",name:\"${REPO##*/}\"){pullRequest(number:$PR){reviewThreads(first:100){nodes{isResolved comments(first:50){nodes{path author{login __typename}}}}}}}}" 2>/dev/null || printf '{}')
+      foreign=$(printf '%s\n' "$threads" | jq -r --argjson owned '["copilot-pull-request-reviewer","Copilot"]' '
+        [.data.repository.pullRequest.reviewThreads.nodes[]?
+         | select(.isResolved | not)
+         | .comments.nodes[0]
+         | select((.author.__typename // "") == "Bot")
+         | (.author.login // "") as $login
+         | select(($owned | index($login)) | not)
+         | "\($login)  \(.path // "?")"] | .[]' 2>/dev/null)
+      # grep -c prints 0 AND exits 1 when nothing matches, so a `|| echo 0`
+      # fallback here would append a second zero and make the numeric test
+      # below fail with "integer expected" -- falling through to CLEAN. That
+      # happened in the sibling script on its first live run.
+      n_foreign=$(printf '%s\n' "$foreign" | grep -c '[^[:space:]]') || true
+      if [ "${n_foreign:-0}" -ge 1 ]; then
+        echo
+        echo "Copilot is clean on this commit, but $n_foreign unresolved finding(s) on this PR"
+        echo "belong to a reviewer this gate does not read. A clean verdict here means"
+        echo "COPILOT found nothing -- not that the pull request is clean."
+        echo "------------------------------------------------------------"
+        printf '%s\n' "$foreign"
+        echo "------------------------------------------------------------"
+        echo "Open them on the PR and disposition each one: reply, then resolve."
+        echo "RESULT=OTHERBOT count=$n_foreign"
         exit 0
       fi
 
