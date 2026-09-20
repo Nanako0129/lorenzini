@@ -234,11 +234,29 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
           echo "The CodeRabbit gate defines a clean pass differently; read it from"
           echo "coderabbit-review-wait/SKILL.md rather than carrying this one's logic across."
           echo "RESULT=NOT_REVIEWED reason=quota fallback=coderabbit"
-        else
-          echo "RESULT=NOT_REVIEWED"
+          exit 0
         fi
-        exit 0
+        # ONLY THE QUOTA CASE IS TERMINAL. Every other non-verdict body is a
+        # state a later review can supersede -- an object posted mid-run, a
+        # format not yet recognised, a message that is about to be replaced --
+        # and exiting on first sight forfeits the review that was coming.
+        # Raised by CodeRabbit on lorenzini#3, and it is the same mistake as
+        # treating a skip notice as terminal, which the sibling script was fixed
+        # for in this very commit. The quota message is different in kind: it
+        # states that nothing will be reviewed, not that nothing has been yet.
+        #
+        # The information is not lost at the deadline. not_reviewed=1 makes the
+        # timeout report NOT_REVIEWED with this body rather than TIMEOUT, so a
+        # body that never becomes a verdict still ends as "nothing said the code
+        # was read" instead of "the verdict may still arrive".
+        not_reviewed=1
+        not_reviewed_body="$body"
+        echo "Not treating this as final: a later review can replace it. Polling on."
+        clean_seen=0
+        sleep "$INTERVAL"
+        continue
       fi
+      not_reviewed=0
 
       echo "Copilot reviewed the current commit and left no inline comments."
       printf '%s\n' "$body" | head -1 | sed 's/^/Review body says: /'
@@ -574,5 +592,16 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   sleep "$INTERVAL"
 done
 
+if [ "${not_reviewed:-0}" = "1" ]; then
+  echo "Copilot's last review of ${HEAD:0:7} never carried a verdict body, and the deadline"
+  echo "passed with it still that way. Reported as NOT_REVIEWED rather than TIMEOUT: the"
+  echo "difference is that a timeout says the verdict may still arrive, and this one says"
+  echo "the reviewer answered with something that is not one."
+  echo "------------------------------------------------------------"
+  printf '%s\n' "$not_reviewed_body"
+  echo "------------------------------------------------------------"
+  echo "RESULT=NOT_REVIEWED"
+  exit 0
+fi
 echo "RESULT=TIMEOUT (no Copilot review of ${HEAD:0:7} in ${TIMEOUT}s; it may be slow, out of quota, or not enabled for this account)"
 exit 0

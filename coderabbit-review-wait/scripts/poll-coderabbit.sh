@@ -691,20 +691,32 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
           echo "so the notice may already be stale. Continuing to poll rather than calling it."
           race_warned=1
         }
+        skip_seen=0; skip_id=""
         clean_seen=0; sleep "$INTERVAL"; continue ;;
     esac
   fi
   # Still not terminal on the FIRST clean look: confirm it twice, one interval
   # apart, so a read landing in the gap before the edit cannot decide the run.
+  #
+  # THE COUNTER IS BOUND TO THE NOTICE IT IS COUNTING, not to the loop. Raised
+  # by CodeRabbit on lorenzini#3 against the first version, which only reset on
+  # a non-notice read: notice A seen once left the count at 1, and a LATER
+  # notice B could then reach 2 on its own first sighting and be reported after
+  # one observation. Keying on created_at restarts the count whenever the notice
+  # is a different one, which covers the reported path and every other way the
+  # notice can change identity between reads.
+  note_id=$(printf '%s\n' "$icomments" | jq -r --arg b "$BOT" \
+    '[.[][] | select(.user.login == $b)] | last | "\(.created_at // "")|\(.updated_at // "")"' 2>/dev/null)
   case "$last_note" in
     *"Reviews paused"*|*"Review skipped"*)
+      [ "$note_id" = "${skip_id:-}" ] || { skip_seen=0; skip_id="$note_id"; }
       skip_seen=$(( ${skip_seen:-0} + 1 ))
       if [ "$skip_seen" -lt 2 ]; then
         echo "Read a skip or pause notice. Confirming once more before reporting it, because"
         echo "CodeRabbit edits that comment in place and it may be about to change."
         sleep "$INTERVAL"; continue
       fi ;;
-    *) skip_seen=0 ;;
+    *) skip_seen=0; skip_id="" ;;
   esac
   case "$last_note" in
     *"Reviews paused"*)
