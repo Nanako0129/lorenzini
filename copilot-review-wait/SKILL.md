@@ -58,7 +58,7 @@ So **a review with a `Suppressed comments` section is never reported as CLEAN.**
 | `RESULT=CLEAN` | Review of head, no inline comments, **and no suppressed section**. The gate is met. |
 | `RESULT=SUPPRESSED count=N` | Review of head, no inline comments, but N findings withheld into the body. The script prints the whole section — path, line and code. **Triage them like any other finding before merging.** |
 | `RESULT=MISCOUNT claimed=N counted=M` | Copilot's own body reports more comments than were found on the head commit. Something it posted is not being counted — a login change, a filter bug, a failed read. **The gap is the finding.** |
-| `RESULT=TABLE count=N` | Copilot's newer body format (`ccr-overview-v2`) reports findings in a per-file table rather than as inline comments, alongside a `Findings: None` that counts only the inline ones. **Not a pass.** Read the printed cells. |
+| `RESULT=UNREAD format=X` | The body is in a format with no known clean shape — currently `ccr-overview-v2`. **Not a pass and not a failure: an admission.** Every captured sample of it carries a substantive summary line alongside `Findings: None` and zero inline comments, and none is a confirmed clean review, so an empty count there means nothing. The review is printed; a person reads it. |
 
 `Files reviewed: 4/5` deserves the same glance and is not automated: Copilot skips files, and a skipped file was never reviewed, so no verdict says anything about it.
 
@@ -156,7 +156,7 @@ When the poller completes, read the output file. The last line is the verdict:
 | `RESULT=SUPPRESSED count=N` | Review of head, no inline comments, but N findings withheld into the body (printed above the result line) | **Not a pass.** Triage the N findings as fix / defer / reject like inline ones. Fixing any of them means a push and a fresh round. |
 | `RESULT=SUGGESTIONS count=N` | N inline comments on the head commit (printed above the result line) | Auto loop: triage → fix → reply → resolve → push → wait again, within budget. Single run: print the comments and stop. |
 | `RESULT=MISCOUNT claimed=N counted=M` | Copilot's own body reports N findings for this commit; M were found on it | **Not a pass.** The gap is the finding. Some live in sections that never become inline comments — `Previously missed` covers code unchanged since the last review. |
-| `RESULT=TABLE count=N` | The `ccr-overview-v2` body reports findings in its per-file table rather than as comments | **Not a pass.** Read the printed cells. |
+| `RESULT=UNREAD format=X` | A review format with no known clean shape, currently `ccr-overview-v2` | **Not a pass.** No clean example of this format has been observed, so an empty finding count proves nothing. The body is printed for a person to read. |
 | `RESULT=TIMEOUT` | No review in time | Check the PR is not a draft, and that the review was actually requested (timeline query above). Otherwise Copilot is slow or the account lacks a plan with code review. |
 | `RESULT=ERROR ...` | Could not resolve repo/PR or `gh`/`jq` missing | Fix the precondition and retry. |
 
