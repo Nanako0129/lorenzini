@@ -186,6 +186,42 @@ ok "a foreign review on another commit is not at head" "" "$(printf '%s' "$other
 contradictory='[[{"commit_id":"HEAD1","user":{"login":"Copilot","type":"Bot"},"body":"Findings: None\nSuppressed comments (2)"}]]'
 ok "a contradictory body reads as found, not clean" "found   Copilot" "$(printf '%s' "$contradictory" | classify_reviews)"
 
+# --- a rate limit is terminal, not something to poll through ---
+# The four read sites retry on failure, which is right for a 5xx and wrong for a
+# rate limit: the poller would retry to the deadline and report TIMEOUT, which
+# says the verdict may still arrive. It will not. Same category error as
+# reporting a paused or skipped review as a timeout.
+#
+# gh is stubbed rather than the limit exhausted, and the stub answers the
+# rate_limit endpoint only, so the function is exercised exactly as it runs.
+_stub_gh() { # _stub_gh <core-remaining> <graphql-remaining>
+  local dir; dir=$(mktemp -d)
+  printf '#!/bin/sh\n[ "$1" = "api" ] && [ "$2" = "rate_limit" ] || exit 1\nprintf %%s %s\n' \
+    "'{\"resources\":{\"core\":{\"remaining\":$1,\"reset\":$(( $(date +%s) + 600 ))},\"graphql\":{\"remaining\":$2,\"reset\":$(( $(date +%s) + 600 ))}}}'" \
+    > "$dir/gh"
+  chmod +x "$dir/gh"; printf '%s' "$dir"
+}
+d=$(_stub_gh 4000 5000)
+( PATH="$d:$PATH"; rate_limited >/dev/null ); ok "headroom on both -> not limited" "0" "$?"
+rm -rf "$d"
+
+d=$(_stub_gh 0 5000)
+( PATH="$d:$PATH"; rate_limited >/dev/null ); ok "core exhausted -> limited" "1" "$?"
+out=$( PATH="$d:$PATH"; rate_limited 2>&1 | head -1 )
+ok "and it says so" "GitHub's API rate limit is exhausted (core=0 graphql=5000)." "$out"
+rm -rf "$d"
+
+# core and graphql exhaust independently, and this script uses both.
+d=$(_stub_gh 5000 0)
+( PATH="$d:$PATH"; rate_limited >/dev/null ); ok "graphql exhausted alone -> limited" "1" "$?"
+rm -rf "$d"
+
+# An unreadable rate_limit endpoint is NOT evidence of a limit: returning 1 here
+# would turn any transient failure into a terminal verdict.
+d=$(mktemp -d); printf '#!/bin/sh\nexit 1\n' > "$d/gh"; chmod +x "$d/gh"
+( PATH="$d:$PATH"; rate_limited >/dev/null ); ok "unreadable limit endpoint is not a limit" "0" "$?"
+rm -rf "$d"
+
 # --- pipefail: a paginated read that dies after page 1 must not look complete ---
 # Without it the pipeline takes jq's status, and jq -s builds a valid PARTIAL
 # array from the pages that did arrive.

@@ -169,6 +169,38 @@ dispositioned_ids() { jq -r "$DISPOSITIONED_JQ" 2>/dev/null; }
 # GraphQL reviewThreads payload on stdin -> count of resolved-without-human-reply threads
 unreplied_resolved() { jq -r "$UNREPLIED_JQ" 2>/dev/null; }
 
+# A READ FAILURE THAT POLLING CANNOT FIX MUST NOT BECOME A TIMEOUT.
+#
+# The four read sites in this file retry on failure, which is right for a 5xx or
+# a dropped page and wrong for a rate limit: the poller then retries until the
+# global deadline and reports TIMEOUT, which says the verdict may still arrive.
+# It will not. That is the same category error as reporting a paused or skipped
+# review as a timeout, both of which already have their own verdicts here --
+# raised by CodeRabbit on lorenzini#2, in the outside-diff bucket, against the
+# retry loops added earlier the same day to fix the opposite defect.
+#
+# Asked of the rate_limit endpoint rather than parsed out of an error string:
+# the endpoint is authoritative, it reports core and graphql separately (they
+# exhaust independently, and this script uses both), and requests to it do not
+# themselves count against the limit. A vendor error message is a string that
+# can be reworded; a remaining count cannot.
+#
+# Returns 0 and prints nothing when there is headroom, so a caller can use it as
+# a guard before retrying. Prints the verdict and returns 1 when exhausted.
+rate_limited() {
+  local rl core gql now reset
+  rl=$(gh api rate_limit 2>/dev/null) || return 0   # unreadable: not evidence of a limit
+  core=$(printf '%s' "$rl" | jq -r '.resources.core.remaining // empty' 2>/dev/null)
+  gql=$(printf '%s' "$rl" | jq -r '.resources.graphql.remaining // empty' 2>/dev/null)
+  [ "${core:-1}" = "0" ] || [ "${gql:-1}" = "0" ] || return 0
+  if [ "${core:-1}" = "0" ]; then reset=$(printf '%s' "$rl" | jq -r '.resources.core.reset'); else reset=$(printf '%s' "$rl" | jq -r '.resources.graphql.reset'); fi
+  now=$(date +%s)
+  echo "GitHub's API rate limit is exhausted (core=${core:-?} graphql=${gql:-?})."
+  echo "Polling cannot resolve this, so it is reported rather than waited out."
+  echo "Resets in $(( (reset - now + 59) / 60 )) minute(s), at $(date -r "$reset" '+%H:%M:%S' 2>/dev/null || echo "$reset")."
+  return 1
+}
+
 # Reviews payload on stdin -> one "state login" line per FOREIGN review at $1.
 #
 # ONE definition, called by the poll loop and by tests/test-classifiers.sh. The
@@ -475,6 +507,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   # findings. Raised by CodeRabbit on lorenzini#2, in the outside-diff bucket.
   if ! reviews=$(gh api --paginate --slurp "repos/$REPO/pulls/$PR/reviews?per_page=100" 2>/dev/null) \
      || ! printf '%s\n' "$reviews" | jq -e 'type == "array" and all(.[]; type == "array")' >/dev/null 2>&1; then
+    rate_limited || { echo "RESULT=ERROR rate limited while reading the reviews endpoint"; exit 2; }
     [ "${rev_warned:-0}" = "1" ] || { echo "Could not read the reviews endpoint. Retrying rather than counting zero reviews."; rev_warned=1; }
     clean_seen=0; sleep "$INTERVAL"; continue
   fi
@@ -560,6 +593,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   # docs/fail-open-ledger.md: retry, never count zero.
   if ! icomments=$(gh api --paginate --slurp "repos/$REPO/issues/$PR/comments?per_page=100" 2>/dev/null) \
      || ! printf '%s\n' "$icomments" | jq -e 'type == "array"' >/dev/null 2>&1; then
+    rate_limited || { echo "RESULT=ERROR rate limited while reading the issue-comments endpoint"; exit 2; }
     [ "${inote_warned:-0}" = "1" ] || { echo "Could not read the issue-comments endpoint. Retrying rather than reading it as no comments."; inote_warned=1; }
     clean_seen=0; sleep "$INTERVAL"; continue
   fi
@@ -652,6 +686,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
     # invalid JSON, which jq then turns back into 0 through its own `|| echo 0`.
     if ! comments=$(gh api --paginate --slurp "repos/$REPO/pulls/$PR/comments?per_page=100" 2>/dev/null) \
        || ! printf '%s\n' "$comments" | jq -e 'type == "array"' >/dev/null 2>&1; then
+      rate_limited || { echo "RESULT=ERROR rate limited while reading the review-comments endpoint"; exit 2; }
       [ "${read_warned:-0}" = "1" ] || {
         echo "Could not read the review-comments endpoint. Retrying rather than counting zero findings."
         read_warned=1
@@ -707,6 +742,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
     if ! threads=$(set -o pipefail; gh api graphql --paginate -f query="query(\$endCursor:String){repository(owner:\"${REPO%%/*}\",name:\"${REPO##*/}\"){pullRequest(number:$PR){reviewThreads(first:100, after:\$endCursor){pageInfo{hasNextPage endCursor} nodes{isResolved comments(first:50){nodes{databaseId path author{login __typename}}}}}}}}" 2>/dev/null \
                    | jq -s '{data:{repository:{pullRequest:{reviewThreads:{nodes:[.[].data.repository.pullRequest.reviewThreads.nodes[]]}}}}}' 2>/dev/null) \
        || ! printf '%s\n' "$threads" | jq -e '.data.repository.pullRequest.reviewThreads.nodes | type == "array"' >/dev/null 2>&1; then
+      rate_limited || { echo "RESULT=ERROR rate limited while reading the review threads"; exit 2; }
       [ "${thread_warned:-0}" = "1" ] || { echo "Could not read the review threads. Retrying rather than counting zero findings."; thread_warned=1; }
       clean_seen=0; sleep "$INTERVAL"; continue
     fi
