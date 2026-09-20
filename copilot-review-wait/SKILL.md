@@ -59,46 +59,6 @@ So **a review with a `Suppressed comments` section is never reported as CLEAN.**
 | `RESULT=SUPPRESSED count=N` | Review of head, no inline comments, but N findings withheld into the body. The script prints the whole section — path, line and code. **Triage them like any other finding before merging.** |
 | `RESULT=MISCOUNT claimed=N counted=M` | Copilot's own body reports more comments than were found on the head commit. Something it posted is not being counted — a login change, a filter bug, a failed read. **The gap is the finding.** |
 
-### Two more buckets the inline count misses — measured on NyanCogs#29, 2026-09-20
-
-A `RESULT=CLEAN` on that PR was false. The head review carried **four** findings
-and zero inline comments on head. They hid in two places the script does not read:
-
-1. **Findings carried forward, anchored to an earlier commit.** The body's
-   `<details open><summary><strong>Open (2)</strong></summary>` listed both as
-   `#discussion_rNNN` links. Those comments' `original_commit_id` is the
-   *previous* commit, so a gate keyed to head counts zero — while the same body
-   says `**Findings:** 1 High · 1 Medium`. Pushing a fix mid-round is what
-   creates this: Copilot reviews the new head, re-raises what is still open, and
-   links rather than re-anchors.
-2. **A `Previously missed (N)` section**, subtitled *"In code that hasn't changed
-   since last review"*, each finding in its own nested `<details>` with the
-   `path:line` inside. Neither the inline set nor `Comments generated` includes
-   it. On #29 it held the two most durable findings: a model alias that moved
-   out from under the calibrated thresholds, and unbounded concurrent provider
-   requests.
-
-So before trusting any CLEAN, read the body yourself for `Findings:`, `Open (`,
-`Previously missed (` and `Suppressed comments`. Treat a non-zero `Findings:`
-count as the real verdict; it is Copilot's own number and it disagreed with the
-inline count on the very first PR where both were checked.
-
-That is now **three** buckets across two reviewers — suppressed, previously
-missed, carried-forward — plus CodeRabbit's nitpick and outside-diff sections.
-The pattern is not a quirk of one vendor. Assume the next one has a bucket too.
-
-**And the repository may not have the reviewer you expect.** NyanCogs is 4 stars,
-so this skill's table routes it to Copilot — but CodeRabbit reviewed #29 anyway,
-unprompted, and posted 4 findings of its own. One of them was raised by neither
-Copilot round and was real. A poller that filters comments to one bot's login
-silently discards the other's. List *all* comments on the PR and group by author
-before deciding a round is done:
-
-```bash
-gh api --paginate repos/OWNER/NAME/pulls/N/comments \
-  | jq -r '.[] | "\(.user.login) \(.path):\(.line) \(.original_commit_id[0:7])"'
-```
-
 `Files reviewed: 4/5` deserves the same glance and is not automated: Copilot skips files, and a skipped file was never reviewed, so no verdict says anything about it.
 
 **Size a round by the suppressed count too, not by `count=N` alone.** Observed on sepia (reported by `sepia-aa`): #250 over four rounds, then #254 and #255 at **6 suppressed each**. The withheld set has been running at or above the inline set every round, so a round's real workload is roughly double what the inline count advertises. The 2-round budget below counts *rounds*, not findings — do not quietly spend it faster because a round turned out to hold twice the work, and do not extend it for volume alone. Volume is a reason to re-read the divergence section, not to add rounds.
