@@ -1,35 +1,57 @@
 # lorenzini
 
-Claude Code skills that wait for a third-party pull-request reviewer and decide
-whether its verdict actually means *pass*.
+[English](README.md) · [繁體中文](README.zh-TW.md)
 
-A shark's ampullae of Lorenzini are electroreceptors: they find prey buried in
-sand, where there is nothing to see. That is what these skills are for. Every
-reviewer so far has reported findings in places its own count ignores, and every
-bug in this repository has been the same mistake — treating "I cannot see a
-problem" as "there is no problem".
+Claude Code skills that poll third-party pull request reviewers—CodeRabbit, GitHub Copilot, and Codex—and adjudicate whether their verdicts actually permit a merge.
 
-## What is here
+They do not review source code; they adjudicate what the reviewer reported.
 
-| Skill | Reviewer | Status |
+A shark's ampullae of Lorenzini are electroreceptors that locate prey buried in sand where eyes see nothing. That is the job here. Every automated reviewer observed across these repositories has reported findings inside collapsed sections, uncounted comments, or separate threads that its own top-level summary ignored. Every bug in this repository has made the identical error: assuming silence means clean code.
+
+## The one rule
+
+Never infer a pass from absence.
+
+A verdict requires an explicit positive completion marker. Without one, keep polling. Silence is not approval, and an empty finding list does not mean zero issues. Every gate failure in this project failed *open*: it reported success when none was earned.
+
+The record of every missed finding lives in [`docs/fail-open-ledger.md`](docs/fail-open-ledger.md). It is not an appendix; it is the evidence base for whether this tool can be trusted. The ledger documents 11 incidents where earlier versions returned an unearned pass, starting on 2026-09-17 with `coralline#85`, where a login filter missed one of Copilot's two logins and returned `CLEAN` on a pull request containing three actionable findings.
+
+## Reviewer skills and routing
+
+Routing is split across three skills:
+- [`coderabbit-review-wait`](coderabbit-review-wait/): CodeRabbit (`coderabbitai[bot]`), for repositories with 10 or more stars (including `lorenzini` itself at 13 stars).
+- [`copilot-review-wait`](copilot-review-wait/): GitHub Copilot (`copilot-pull-request-reviewer[bot]`), for repositories under 10 stars.
+- [`codex-review-wait`](codex-review-wait/): Codex (`chatgpt-codex-connector`), dormant since 2026-09-17 following an upstream subscription suspension.
+
+This division is a vendor constraint, not an architectural choice. CodeRabbit's open-source plan requires manual review triggers on public repositories with fewer than 10 stars, so those repositories route to Copilot. Query star counts with the GitHub CLI before configuring:
+
+```bash
+gh api repos/OWNER/NAME -q .stargazers_count
+```
+
+Routing directs traffic, but cannot prevent overlaps. A second reviewer can still be triggered manually on any pull request or enabled via checkboxes in CodeRabbit pause notifications, leaving no trace readable by the primary poller. On `lorenzini`'s own pull requests, PR #2 had three Copilot findings slip through two adjudications unmentioned, while PR #1 had four findings entirely omitted from review summaries, two of which were legitimate defects. That leakage is why `RESULT=OTHERBOT` exists.
+
+## Adjudication verdicts
+
+Each skill polls until a definitive verdict is recorded against the current head commit, then emits a single machine-readable `RESULT=` line. The three skills define clean differently; read the `SKILL.md` for the repository you are configuring. Porting logic between them fails silently rather than loudly.
+
+| Verdict | Meaning | Disposition |
 |---|---|---|
-| [`coderabbit-review-wait`](coderabbit-review-wait/) | CodeRabbit (`coderabbitai[bot]`) | Active on repositories with 10 stars or more |
-| [`copilot-review-wait`](copilot-review-wait/) | GitHub Copilot (`copilot-pull-request-reviewer[bot]`) | Active on repositories under 10 stars |
-| [`codex-review-wait`](codex-review-wait/) | Codex (`chatgpt-codex-connector`) | Dormant since 2026-09-17, subscription paused |
+| `RESULT=CLEAN` | Gate passed. Safe to merge. | Merge the pull request. |
+| `RESULT=SUGGESTIONS count=N` | N inline findings on head, or `CHANGES_REQUESTED`. | Resolve or reply before merging. |
+| `RESULT=NITPICKS count=N` | Otherwise clean, but N findings—or N skipped, unread files—sit in a collapsed body section that the reviewer's own count ignores. | Not a pass. A file that was never read means a zero count over it proves nothing. Disposition each, push, and re-poll. |
+| `RESULT=PREMERGE count=N` | Otherwise clean, but N pre-merge checks failed. The failure appears only in the summary tally, not in the row status cell. | Not a pass. Often a legitimate defer—a coverage threshold counts every function touched by the diff, not just added ones. Disposition each. |
+| `RESULT=MISCOUNT claimed=N counted=M` | The reviewer's own claimed count exceeds what this gate arrived at. | Not a pass. The gap itself is the finding: posted content is not being counted. |
+| `RESULT=UNREPLIED count=N` | N resolved threads carry no human reply. | Not a pass. `@coderabbitai resolve` closes every thread at once, leaving no record of decisions. Reply with dispositions, then resolve. |
+| `RESULT=OTHERBOT` | This gate is clean, but the pull request carries undispositioned findings from a reviewer it cannot read—either an unresolved thread or a finding inside that reviewer's own review body that generates no thread. | Not a pass. Clean here only proves that *one* reviewer found nothing. Open the pull request and read what the secondary bot reported. |
+| `RESULT=NOT_REVIEWED` | A review object exists at head, but its body is not a verdict. | With `reason=quota`, Copilot reviewed nothing. Because quotas are per requesting user, all repositories on that account lose coverage simultaneously: switch to CodeRabbit immediately. Other variants report at deadline, not on sight. |
+| `RESULT=UNREAD format=X` | The review body uses a format with no verified clean sample (currently `ccr-overview-v2`). | Not a pass and not a failure: an admission. No clean sample of this format has been captured, so zero findings prove nothing. The body is printed in full for a human to evaluate. |
+| `RESULT=TIMEOUT` | Head did not receive a verdict within the polling deadline. | Gate held. Never treat a timeout as approval. |
+| `RESULT=ERROR ...` | Polling cannot resolve this state: draft PRs, paused or skipped reviews, exhausted GitHub API rate limits, or an unresolvable repository/PR. | Fix the precondition. Rate limits report their reset time directly rather than polling to the deadline. |
 
-The CodeRabbit/Copilot split is a vendor constraint, not a preference:
-CodeRabbit's OSS tier requires a public repository with fewer than ten stars to
-have its reviews triggered by hand, so those repositories moved to Copilot.
-Check which applies with `gh api repos/OWNER/NAME -q .stargazers_count` rather
-than assuming.
+## Installation and checkout hazards
 
-Each skill polls until a verdict lands on the current head commit and prints one
-machine-readable `RESULT=` line. They do not review code; they adjudicate what a
-reviewer said about it.
-
-## Install
-
-Clone at a tag and symlink into `~/.claude/skills/`:
+Clone at a release tag and create symlinks in `~/.claude/skills/`:
 
 ```bash
 git clone https://github.com/Nanako0129/lorenzini.git ~/side-project/lorenzini
@@ -39,175 +61,90 @@ for s in codex copilot coderabbit; do
 done
 ```
 
-Requires `gh` (authenticated) and `jq`.
+This setup requires an authenticated `gh` CLI and `jq`.
 
-**Pin to a tag, not to `main`.** These skills decide whether a pull request may
-merge, `main` is where each newly found fail-open is fixed, and a symlinked
-checkout changes the gate the moment you `git pull`. Update deliberately:
+Pin symlinks to a release tag, never to `main`. Because these skills govern merge safety and `main` is where newly caught fail-opens are patched, running on `main` means an ordinary `git pull` silently changes your gate logic. Symlinks target directory paths rather than commits. Update deliberately:
 
 ```bash
-cd ~/side-project/lorenzini && git fetch --tags && git checkout v0.2.0
+git fetch --tags && git checkout v0.2.0
 ```
 
-The symlinks keep working — they point at directories, not commits.
+If you develop inside `lorenzini`, your checked-out branch is your active gate. On 2026-09-20, running the same poller on the same pull request minutes apart produced `RESULT=CLEAN` on one branch and `RESULT=NOT_REVIEWED` on another—evaluating a review body that stated the source files were never read.
 
-**If you develop this repository, the checked-out branch IS the gate you are
-running.** The symlink resolves to the working tree, so switching branches
-switches the merge gate under you, silently. Measured here on 2026-09-20: the
-same poller, on the same pull request, minutes apart — `RESULT=CLEAN` from one
-branch and `RESULT=NOT_REVIEWED` from another, over a review body that said the
-code had never been read. Run a poller from a clean checkout of the tag you
-mean to be on, or read the verdict knowing which branch produced it.
+## Version support
 
-### Versions
+| Tag | Status | Notes |
+|---|---|---|
+| `v0.2.0` | Usable | Current baseline with cross-reviewer, non-review, and format recognition guards. |
+| `v0.1.1` | Superseded | Lacks cross-reviewer guards, non-review detection, and updated format recognition. |
+| `v0.1.0` | Do not use | Contains four distinct gates that report passes without earning them. |
 
-| Tag | Use it? |
-|---|---|
-| `v0.2.0` | Yes. |
-| `v0.1.1` | Superseded. Missing the cross-reviewer, non-review and format-recognition guards below. |
-| `v0.1.0` | **No.** Four gates in it report a pass where none was earned. |
+If you cloned before 2026-09-20, your local repository reflects `main` at that moment, somewhere within `v0.1.x`. Check your position with `git log --oneline -1` against the tags above.
 
-If you cloned before 2026-09-20 you are on `main` at whatever it was that day,
-which is somewhere in the `v0.1.x` range. `git log --oneline -1` against the
-tags above will say where.
+## How changes land here
 
-Every fail-open found so far, with the pull request that produced it, is in
-[`docs/fail-open-ledger.md`](docs/fail-open-ledger.md). It is the honest
-description of how much to trust a `RESULT=CLEAN`: each entry is a case where an
-earlier version of this code printed one and should not have.
+Changes land via pull requests, but nothing enforces this mechanically: `main` has no branch protection rules and requires no reviews. A pull request here can merge under any verdict or no verdict at all. The gate is an operational discipline rather than an infrastructure lock, matching the arrangement in every repository this tool reviews.
 
-## The optional Jev shadow check
+With 13 stars, `lorenzini` sits above CodeRabbit's open-source threshold, so reviews run on CodeRabbit and verdicts are read by `coderabbit-review-wait`. The legacy `copilot-auto-review` ruleset created before reaching 10 stars remains in repository settings with its status set to disabled. Copilot still reviewed pull requests here, which is where the `OTHERBOT` leak was first discovered.
 
-`coderabbit-review-wait` can ask a classifier whether a collapsed section heading
-names work someone still has to look at. **It is off unless you turn it on, and
-today it changes no verdict at all.** It is in shadow mode: when it disagrees it
-prints `(jev: would HOLD ...)` next to the verdict the gate reached on its own,
-and the gate's verdict is what the script exits with. Enabling it cannot block a
-merge; it can only tell you that something would have.
+Draft pull requests are refused immediately: the poller exits with `RESULT=ERROR` naming draft status, ensuring draft silence is never mistaken for review latency. Merge only on `RESULT=CLEAN`. For any other outcome, disposition the output first.
 
-The design constraint it is being measured against, if it ever gets veto power:
-**one direction only, `CLEAN` → `HOLD`, never the reverse.** A withheld result
-would stay withheld whatever the classifier said. That is what makes every way
-it can fail — no key, a timeout, an HTTP error, a low-confidence answer — leave
-today's answer standing, and it is the property the shadow period exists to test
-before any of it is wired to a verdict.
+The first two commits to this repository were pushed directly to `main` with no pull requests and no reviewer configured. A project built entirely to refuse unverified merges merged itself twice without any verdict. The ruleset was created only after someone asked why there were no pull requests. That was not a broken rule; it was an unwritten rule where it least belonged. It shared the exact shape of every ledger entry, one abstraction layer up: the guard was assumed to exist rather than verified.
 
-*(An earlier version of this paragraph claimed the `CLEAN → HOLD` transition as
-current behaviour. It is not; `jev_shadow` prints and returns, and `RESULT=CLEAN`
-is echoed immediately after. That claim was written from the design intent
-rather than from the code, which is the one thing this repository's own rules
-say not to do.)*
+## The optional Jev shadow classifier
 
-You do not need it. Without a key, or with `JEV_SHADOW` unset, the scripts behave
-exactly as they do today.
+`coderabbit-review-wait` can query a classifier to determine whether a collapsed markdown section heading describes unaddressed work.
 
-| | |
-|---|---|
-| Turn it on | `JEV_SHADOW=1` |
-| Key | `TYPESAFE_API_KEY`, or `~/.config/typesafe/api_key` (chmod 600) |
-| Get a key | <https://console.typesafe.ai/settings/keys> — early access, currently a waitlist |
-| In Claude Code | put `TYPESAFE_API_KEY` and `JEV_SHADOW` in the `env` block of `~/.claude/settings.json` |
-| Where holds are logged | `$XDG_STATE_HOME/lorenzini/shadow-holds.jsonl`, falling back to `~/.local/state/lorenzini/` when `XDG_STATE_HOME` is unset. Override with `JEV_SHADOW_LOG`. Call records go to `jev-calls.jsonl` alongside it, or `JEV_LOG`. |
+Jev is off by default and changes no gate decisions today. When enabled via `JEV_SHADOW=1`, it operates strictly in shadow mode: if it disagrees with a passing verdict, it prints `(jev: would HOLD ...)` alongside the script's verdict, and the script exits using the gate's original verdict. Enabling Jev cannot block a merge; it only reports what would have been held.
 
-**With `JEV_SHADOW` unset the scripts behave exactly as they did before this
-existed** — no call, no output, no dependency. That is the claim worth making
-precisely: with it *on*, the runs print extra lines, so "exactly as today" is
-true of disabled mode and not of enabled mode.
+If Jev is ever granted veto authority in the future, the design constraint is strictly unidirectional: `CLEAN` may transition to `HOLD`, but `HOLD` can never transition to `CLEAN`. A held verdict stays held regardless of classifier output. That is why every failure mode—missing keys, timeouts, network errors, or low confidence—leaves today's verdict untouched. Verifying this invariant under real polling is the entire purpose of the observation period before wiring any model output to verdicts. When `JEV_SHADOW` is unset, no calls are made, no output is printed, and no dependencies are loaded.
 
-With it on and no key, it prints `(jev: unavailable -- ...)` and leaves the
-verdict alone. So do a timeout, an HTTP error and a missing questions file. That is not
-politeness. In shadow mode it changes nothing either way, and the only
-transition it would ever be *permitted* is `CLEAN → HOLD`, so every way it can
-fail leaves today's answer standing rather than needing its own handling. A
-classifier that could turn a held verdict into a pass would need each of its
-failure modes caught individually, and one of them would be missed.
+Configuration:
+- Set `JEV_SHADOW=1` to enable shadow evaluation.
+- Set `TYPESAFE_API_KEY` in your environment or write it to `~/.config/typesafe/api_key` (`chmod 600`). API keys can be requested at `https://console.typesafe.ai/settings/keys` (early access waitlist).
+- For Claude Code, add `TYPESAFE_API_KEY` and `JEV_SHADOW` to the `env` block in `~/.claude/settings.json`.
+- Holds are logged to `$XDG_STATE_HOME/lorenzini/shadow-holds.jsonl` (falling back to `~/.local/state/lorenzini/shadow-holds.jsonl`, overridable via `JEV_SHADOW_LOG`). API calls are logged to `jev-calls.jsonl` in the same directory (overridable via `JEV_LOG`).
 
-Four outcomes, kept distinguishable on purpose:
+Jev produces four distinct outputs, kept deliberately distinguishable:
+- `(jev: unavailable -- ...)`: Did not run. Missing API keys, network timeouts, HTTP errors, or a missing question file.
+- `(jev: INCOMPLETE -- M of N heading(s) came back without a usable score)`: Ran, but responses were partial or non-numeric. This is not a complete check; subsequent lines cover only headings that returned usable scores.
+- `(jev: checked X of N heading(s), nothing the patterns missed)`: Ran completely; Jev found nothing that standard regex patterns missed.
+- `(jev: would HOLD -- ...)`: Ran completely; Jev identified an unhandled heading that regex patterns missed.
 
-| Line | Means |
-|---|---|
-| `(jev: unavailable -- ...)` | did not run; no key, a timeout, an HTTP error, a missing questions file |
-| `(jev: INCOMPLETE -- M of N heading(s) came back without a usable score)` | ran, but part of the response was missing or non-numeric. **Not a full check**, and the line below it covers only the headings that answered |
-| `(jev: checked X of N heading(s), nothing the patterns missed)` | ran, found nothing the patterns did not already catch |
-| `(jev: would HOLD -- ...)` | ran, found a heading the patterns do not know |
+Collapsing the first three outputs into the same silence is the exact failure documented across most of the ledger. The `INCOMPLETE` state exists because the very first version of this classifier script made that exact error: partial API responses generated an empty flags list, which the script reported as "nothing missed."
 
-Collapsing the first three into one silence is the mistake the ledger is mostly
-about, and the INCOMPLETE state exists because the first version of this code
-made exactly that mistake: a partial response produced an empty flag list and
-the run reported that nothing was missed.
+The criteria file *is* the classifier. Prompts live in `coderabbit-review-wait/jev-questions-v3.json` rather than inline code because altering a single word shifts scoring behavior. In gold set benchmarks, label `L01` ("🧹 Nitpick comments (3)") represents legitimate findings. In `v1`, the classifier scored it 0.37 (falling below the 0.50 threshold) simply because the word "nitpick" was absent from the prompt criteria. Explicitly naming "nitpick" in `v2` raised that same heading's score to 0.697. Every execution records a SHA hash of the question set, and prompt iterations are tracked in filenames rather than guessed.
 
-**The criteria are the classifier.** They live in
-[`coderabbit-review-wait/jev-questions-v3.json`](coderabbit-review-wait/jev-questions-v3.json),
-not inside a script, because editing one word changes what the thing decides:
-v1 missed `Nitpick comments` at 0.37 only because the word "nitpick" was absent,
-and one added sentence took it to 0.70. After any edit, re-run the gold set and
-write a NEW result file:
+To evaluate prompt modifications against the fixture baseline:
 
 ```bash
 python3 tests/run-gold-set.py 3 coderabbit-review-wait/jev-questions-v4.json
 ```
 
-Baselines are in [`tests/fixtures/`](tests/fixtures/). v3 scores 29/30 with 8/8
-recall on hidden work and a 0/30 flip rate over three repeats. It does **not**
-recover the heading `Action not completed`, which the file records as a known
-limit rather than leaving for the next person to rediscover.
+Benchmarks run across 30 labels in `tests/fixtures/`, evaluated three times per release:
 
-## The one rule
-
-**Never infer a pass from absence.**
-
-A verdict requires an explicit positive completion marker. No marker means keep
-polling — not "nothing found, therefore clean". Every bug found here so far has come from
-breaking this rule, in a different way each time, and each one failed *open*:
-it reported success. No count is given on purpose -- an earlier version of this
-sentence carried one, the ledger grew, and the two disagreed until a reviewer
-said so. [`docs/fail-open-ledger.md`](docs/fail-open-ledger.md)
-records each one, what it cost, and how it was caught.
-
-That ledger is the most valuable file here. The scripts encode its conclusions,
-but the conclusions look arbitrary without the failures that produced them, and
-a guard whose reason has been forgotten gets "simplified" away by the next
-person.
-
-## How changes land here
-
-Through a pull request. Nothing enforces that — `main` carries no branch
-protection and no required review, so a pull request here can be merged with any
-verdict or none. The gate is a decision, not a mechanism, which is the same
-arrangement every repository this reviews uses.
-
-The reviewer is **GitHub Copilot**. A repository ruleset named
-`copilot-auto-review` holds one rule of type `copilot_code_review` with
-`review_on_push: true`, so Copilot is requested automatically when a NON-DRAFT
-pull request opens and on every push to it. The same rule carries
-`review_draft_pull_requests: false`, so a draft is not reviewed at all. The
-script refuses one up front rather than waiting: it exits immediately with
-`RESULT=ERROR` naming the draft, so there is nothing to wait for and nothing to
-misread as slowness. `copilot-review-wait` reads the verdict;
-merge on `RESULT=CLEAN`, and on anything else disposition what it printed first.
-
-Why Copilot rather than CodeRabbit: CodeRabbit's OSS tier requires a public
-repository with fewer than ten stars to have its reviews triggered by hand, and
-this one is under that line. The threshold is that vendor's constraint, not a
-rule about which reviewer suits which repository.
-
-Stating all of this because it was not stated, and it was not followed: the
-first two commits here went straight to `main` with no pull request and no
-reviewer configured at all. A repository whose entire purpose is refusing to
-merge on an unverified pass merged itself twice on no verdict whatsoever. The
-ruleset was created afterwards, in response to being asked why there was no pull
-request.
-
-That is not a rule that was broken. It is a rule that was never written down, in
-the one place that should have known better than to leave it implicit — the same
-shape as every entry in the ledger, one level up: the guard was assumed to exist
-rather than checked.
+| Version | Accuracy | Hidden Work Recall | False Positives | Flip Rate (3 Runs) | Notes |
+|---|---|---|---|---|---|
+| `v1` | 27/30 | 6/8 | 1 | 1/30 | Missed `L01` ("🧹 Nitpick comments (3)") at score 0.37 (threshold 0.50). |
+| `v2` | 28/30 | 8/8 | 2 | 0/30 | Added "nitpick" to criteria; `L01` score rose to 0.697. |
+| `v3` (Current) | 29/30 | 8/8 | 1 | 0/30 | Cannot recover "Action not completed"; recorded in the file as a known limitation. |
 
 ## Testing a change
 
-The regression cases named in each `SKILL.md` are live public pull requests.
-Their state changes for reasons unrelated to this code — `pysnmp/pysmi#328`
-moved from `SUGGESTIONS` to `PREMERGE` between two runs an hour apart because
-that repository's maintainer resolved a thread in between. Confirm any behaviour
-change with a controlled comparison (same captured payload, one input varied)
-before believing either the pass or the failure.
+Run classification tests by sourcing production helpers:
+
+```bash
+bash tests/test-classifiers.sh
+```
+
+`tests/test-classifiers.sh` sources helpers directly from production scripts rather than copying patterns into test files. This distinction proved essential when an earlier test asserted against a duplicated regex string: a mutation test that broadened the production pattern broke nothing in CI because the test verified an obsolete copy. New assertions now sit alongside production helpers and invoke them directly.
+
+The public pull requests named in each `SKILL.md` are live manual regression fixtures. Their upstream state shifts for reasons unrelated to this codebase: `pysnmp/pysmi#328` moved from `SUGGESTIONS` to `PREMERGE` within an hour when the upstream maintainer resolved a thread. Any behavioral verification must rely on controlled comparisons—replaying the identical captured payload with a single modified input—before trusting a pass or a failure.
+
+## The fail-open ledger
+
+[`docs/fail-open-ledger.md`](docs/fail-open-ledger.md) documents every instance where an adjudication gate permitted an unearned pass into production. It records 11 verified incidents, detailing the triggering pull request, the operational cost, and how the defect was identified.
+
+The ledger is not an appendix; it is the evidence base for whether this tool can be trusted. Every entry marks an occasion where an earlier version returned `CLEAN` when it should have held the gate. The earliest entry occurred on 2026-09-17 (`Nanako0129/coralline#85`), where a login filter missed one of Copilot's two logins and reported `CLEAN` on a pull request containing three actionable findings.
+
+The poller scripts encode conclusions that look arbitrary without the historical failures that forced them. A defensive guard whose origin is forgotten will eventually be discarded as redundant by whoever edits it next.
