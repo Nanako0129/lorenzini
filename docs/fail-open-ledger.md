@@ -2,8 +2,9 @@
 
 Every gate bug found in this repository, in order. Several entries hold more
 than one defect; no count is kept, because the last two attempts at one went
-stale within a day and a reviewer caught both. Every one of them failed the same direction: it reported
-**pass**, or it claimed a guard existed that did not.
+stale within a day and a reviewer caught both. Every one of them failed the
+same direction: it reported **pass**, or it claimed a guard existed that did
+not.
 
 A gate that fails closed wastes a poll. A gate that fails open merges a defect
 and tells you it was fine. Only one of those is recoverable, which is why the
