@@ -168,11 +168,19 @@ jev_shadow() {
   # classifier adds over the patterns, not whether it agrees with them.
   local shadow_log="${JEV_SHADOW_LOG:-${XDG_STATE_HOME:-$HOME/.local/state}/lorenzini/shadow-holds.jsonl}"
   mkdir -p "$(dirname "$shadow_log")" 2>/dev/null || true
-  local flagged="" i=0 lbl val
+  # A heading with no answer is NOT a heading that came back negative. The
+  # first version skipped missing values silently, so a partial or malformed
+  # response produced an empty flag list and the run reported "nothing the
+  # patterns missed" -- a clean-looking measurement over nothing measured.
+  # Found by CodeRabbit on lorenzini#2. It is the same shape as four entries in
+  # the ledger, sitting inside the code written to address that shape.
+  local flagged="" missing=0 i=0 lbl val
   while IFS= read -r lbl; do
     val=$(printf '%s\n' "$out" | jq -r --arg k "h$i" '.[$k].noul // empty' 2>/dev/null)
     i=$((i+1))
-    [ -n "$val" ] || continue
+    if [ -z "$val" ] || ! awk -v v="$val" 'BEGIN{exit !(v == v + 0)}' 2>/dev/null; then
+      missing=$(( missing + 1 )); continue
+    fi
     awk -v v="$val" 'BEGIN{exit !(v >= 0.5)}' || continue
     printf '%s\n' "$lbl" | grep -qE "$HIDDEN_RE" && continue
     flagged="${flagged}    ${val}  ${lbl}
@@ -180,6 +188,17 @@ jev_shadow() {
   done <<EOF
 $headings
 EOF
+
+  # Report the gap before anything else. "Ran and found nothing" must not be
+  # printed over headings that were never answered.
+  if [ "$missing" -ge 1 ]; then
+    if [ "$missing" -ge "$n" ]; then
+      echo "(jev: unavailable -- the response carried no usable answers for any of $n heading(s))"
+      return 0
+    fi
+    echo "(jev: INCOMPLETE -- $missing of $n heading(s) came back without a usable score."
+    echo " The result below covers only the $(( n - missing )) that did. Do not read it as a full check.)"
+  fi
 
   if [ -n "$flagged" ]; then
     echo "(jev: would HOLD -- $n heading(s) checked, these are unrecognised by the patterns)"
@@ -206,7 +225,7 @@ EOF
 $flagged
 SHADOWEOF
   else
-    echo "(jev: checked $n heading(s), nothing the patterns missed)"
+    echo "(jev: checked $(( n - missing )) of $n heading(s), nothing the patterns missed)"
   fi
 }
 
