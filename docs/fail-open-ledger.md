@@ -396,6 +396,18 @@ fell through to `CLEAN` on any body that was neither that nor the old format.
 The second is the blocklist problem sitting inside the branch written to close a
 fail-open, which is this ledger in miniature.
 
+**One gap left open, deliberately, and written here so it is not an unstated
+assumption.** The foreign-review body check is keyed to the head commit, like
+every other half of this verdict. So a foreign reviewer that posted a body
+finding on an *earlier* commit, followed by a push that does not fix it and no
+further foreign review, leaves nothing holding the pass. Raised by CodeRabbit on
+`lorenzini#2` and deferred there with reasons: un-keying one check makes it the
+only part of the verdict speaking about a different commit than the rest; and
+deciding that a later foreign review *supersedes* an earlier finding requires
+parsing that vendor's verdict, which is the second-gate-inside-this-one that the
+guard exists specifically not to be. It needs its own change and its own
+reasoning, not a fix appended to the one that produced it.
+
 **Two bugs while building the guard, both the failure it exists to prevent.**
 Inside jq's `index(...)` the input is the filter's own input, not the
 surrounding object, so `$owned | index(.author.login)` indexed the owned array

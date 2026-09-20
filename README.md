@@ -29,16 +29,128 @@ reviewer said about it.
 
 ## Install
 
-Symlink into `~/.claude/skills/`:
+Clone at a tag and symlink into `~/.claude/skills/`:
 
 ```bash
-git clone git@github.com:Nanako0129/lorenzini.git ~/side-project/lorenzini
+git clone https://github.com/Nanako0129/lorenzini.git ~/side-project/lorenzini
+cd ~/side-project/lorenzini && git checkout v0.2.0
 for s in codex copilot coderabbit; do
   ln -s ~/side-project/lorenzini/$s-review-wait ~/.claude/skills/$s-review-wait
 done
 ```
 
 Requires `gh` (authenticated) and `jq`.
+
+**Pin to a tag, not to `main`.** These skills decide whether a pull request may
+merge, `main` is where each newly found fail-open is fixed, and a symlinked
+checkout changes the gate the moment you `git pull`. Update deliberately:
+
+```bash
+cd ~/side-project/lorenzini && git fetch --tags && git checkout v0.2.0
+```
+
+The symlinks keep working — they point at directories, not commits.
+
+**If you develop this repository, the checked-out branch IS the gate you are
+running.** The symlink resolves to the working tree, so switching branches
+switches the merge gate under you, silently. Measured here on 2026-09-20: the
+same poller, on the same pull request, minutes apart — `RESULT=CLEAN` from one
+branch and `RESULT=NOT_REVIEWED` from another, over a review body that said the
+code had never been read. Run a poller from a clean checkout of the tag you
+mean to be on, or read the verdict knowing which branch produced it.
+
+### Versions
+
+| Tag | Use it? |
+|---|---|
+| `v0.2.0` | Yes. |
+| `v0.1.1` | Superseded. Missing the cross-reviewer, non-review and format-recognition guards below. |
+| `v0.1.0` | **No.** Four gates in it report a pass where none was earned. |
+
+If you cloned before 2026-09-20 you are on `main` at whatever it was that day,
+which is somewhere in the `v0.1.x` range. `git log --oneline -1` against the
+tags above will say where.
+
+Every fail-open found so far, with the pull request that produced it, is in
+[`docs/fail-open-ledger.md`](docs/fail-open-ledger.md). It is the honest
+description of how much to trust a `RESULT=CLEAN`: each entry is a case where an
+earlier version of this code printed one and should not have.
+
+## The optional Jev shadow check
+
+`coderabbit-review-wait` can ask a classifier whether a collapsed section heading
+names work someone still has to look at. **It is off unless you turn it on, and
+today it changes no verdict at all.** It is in shadow mode: when it disagrees it
+prints `(jev: would HOLD ...)` next to the verdict the gate reached on its own,
+and the gate's verdict is what the script exits with. Enabling it cannot block a
+merge; it can only tell you that something would have.
+
+The design constraint it is being measured against, if it ever gets veto power:
+**one direction only, `CLEAN` → `HOLD`, never the reverse.** A withheld result
+would stay withheld whatever the classifier said. That is what makes every way
+it can fail — no key, a timeout, an HTTP error, a low-confidence answer — leave
+today's answer standing, and it is the property the shadow period exists to test
+before any of it is wired to a verdict.
+
+*(An earlier version of this paragraph claimed the `CLEAN → HOLD` transition as
+current behaviour. It is not; `jev_shadow` prints and returns, and `RESULT=CLEAN`
+is echoed immediately after. That claim was written from the design intent
+rather than from the code, which is the one thing this repository's own rules
+say not to do.)*
+
+You do not need it. Without a key, or with `JEV_SHADOW` unset, the scripts behave
+exactly as they do today.
+
+| | |
+|---|---|
+| Turn it on | `JEV_SHADOW=1` |
+| Key | `TYPESAFE_API_KEY`, or `~/.config/typesafe/api_key` (chmod 600) |
+| Get a key | <https://console.typesafe.ai/settings/keys> — early access, currently a waitlist |
+| In Claude Code | put `TYPESAFE_API_KEY` and `JEV_SHADOW` in the `env` block of `~/.claude/settings.json` |
+| Where holds are logged | `$XDG_STATE_HOME/lorenzini/shadow-holds.jsonl`, falling back to `~/.local/state/lorenzini/` when `XDG_STATE_HOME` is unset. Override with `JEV_SHADOW_LOG`. Call records go to `jev-calls.jsonl` alongside it, or `JEV_LOG`. |
+
+**With `JEV_SHADOW` unset the scripts behave exactly as they did before this
+existed** — no call, no output, no dependency. That is the claim worth making
+precisely: with it *on*, the runs print extra lines, so "exactly as today" is
+true of disabled mode and not of enabled mode.
+
+With it on and no key, it prints `(jev: unavailable -- ...)` and leaves the
+verdict alone. So do a timeout, an HTTP error and a missing questions file. That is not
+politeness. In shadow mode it changes nothing either way, and the only
+transition it would ever be *permitted* is `CLEAN → HOLD`, so every way it can
+fail leaves today's answer standing rather than needing its own handling. A
+classifier that could turn a held verdict into a pass would need each of its
+failure modes caught individually, and one of them would be missed.
+
+Four outcomes, kept distinguishable on purpose:
+
+| Line | Means |
+|---|---|
+| `(jev: unavailable -- ...)` | did not run; no key, a timeout, an HTTP error, a missing questions file |
+| `(jev: INCOMPLETE -- M of N heading(s) came back without a usable score)` | ran, but part of the response was missing or non-numeric. **Not a full check**, and the line below it covers only the headings that answered |
+| `(jev: checked X of N heading(s), nothing the patterns missed)` | ran, found nothing the patterns did not already catch |
+| `(jev: would HOLD -- ...)` | ran, found a heading the patterns do not know |
+
+Collapsing the first three into one silence is the mistake the ledger is mostly
+about, and the INCOMPLETE state exists because the first version of this code
+made exactly that mistake: a partial response produced an empty flag list and
+the run reported that nothing was missed.
+
+**The criteria are the classifier.** They live in
+[`coderabbit-review-wait/jev-questions-v3.json`](coderabbit-review-wait/jev-questions-v3.json),
+not inside a script, because editing one word changes what the thing decides:
+v1 missed `Nitpick comments` at 0.37 only because the word "nitpick" was absent,
+and one added sentence took it to 0.70. After any edit, re-run the gold set and
+write a NEW result file:
+
+```bash
+python3 tests/run-gold-set.py 3 coderabbit-review-wait/jev-questions-v4.json
+```
+
+Baselines are in [`tests/fixtures/`](tests/fixtures/). v3 scores 29/30 with 8/8
+recall on hidden work and a 0/30 flip rate over three repeats. It does **not**
+recover the heading `Action not completed`, which the file records as a known
+limit rather than leaving for the next person to rediscover.
 
 ## The one rule
 
