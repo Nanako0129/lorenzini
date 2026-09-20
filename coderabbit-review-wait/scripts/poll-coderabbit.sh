@@ -216,8 +216,10 @@ EOF
         { v=$1; $1=""; sub(/^[ \t]+/,""); printf "%s\t%s\t%s\t%s\t%s\n", repo, pr, head, v, $0 }' \
       | while IFS=$'\t' read -r rp pn hd nv lb; do
           jq -cn --arg ts "$(date -u +%FT%TZ)" --arg repo "$rp" --arg pr "$pn" --arg head "$hd" \
+                 --arg qh "$qhash" \
                  --arg noul "$nv" --arg label "$lb" --arg model "${JEV_MODEL:-jev-1.13.0}" \
             '{ts:$ts, repo:$repo, pr:($pr|tonumber), head:$head, model:$model,
+               qset_hash:$qh,
                noul:($noul|tonumber), label:$label, verdict_without_jev:"CLEAN", adjudicated:null}' \
             >> "$shadow_log"
         done
@@ -391,7 +393,19 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   # The verdict comment names the range it reviewed ("...between <base> and
   # <head>"), so the full head sha appearing in the body keys it to this commit
   # as precisely as commit_id keys a review.
-  icomments=$(gh api --paginate --slurp "repos/$REPO/issues/$PR/comments?per_page=100" 2>/dev/null || printf '[]')
+  # A FAILED READ IS NOT AN EMPTY COMMENT LIST. The `|| printf '[]'` that used
+  # to be here turned a rate limit, a 5xx or a dropped page into an
+  # authoritative "no comments", and everything below -- the head-keyed
+  # verdict, the skip notice, the pause notice -- then read as absent. The
+  # terminal states are exactly what an unreadable endpoint erases, so the
+  # failure mode is a TIMEOUT reported over a PR that was skipped or paused.
+  # Same shape as the review-comments read above and as nine entries in
+  # docs/fail-open-ledger.md: retry, never count zero.
+  if ! icomments=$(gh api --paginate --slurp "repos/$REPO/issues/$PR/comments?per_page=100" 2>/dev/null) \
+     || ! printf '%s\n' "$icomments" | jq -e 'type == "array"' >/dev/null 2>&1; then
+    [ "${inote_warned:-0}" = "1" ] || { echo "Could not read the issue-comments endpoint. Retrying rather than reading it as no comments."; inote_warned=1; }
+    clean_seen=0; sleep "$INTERVAL"; continue
+  fi
   note=$(printf '%s\n' "$icomments" | jq -r --arg h "$HEAD" --arg b "$BOT" \
     '[.[][] | select(.user.login == $b and (.body | contains($h)))] | last | .body // ""' 2>/dev/null)
   # A SKIP NOTICE CARRIES NO HEAD SHA, so it must not be looked for in $note.

@@ -59,8 +59,18 @@ if [ "$code" != "200" ]; then
   exit 4
 fi
 
-answers=$(jq -c '.answers // empty' "$out") && [ -n "$answers" ] \
-  || { echo "jev: no .answers in response" >&2; exit 5; }
+# Must be an OBJECT, not merely present. Measured against the old expression,
+# 2026-09-20: `.answers // empty` plus [ -n ] accepted {"answers":[]},
+# {"answers":"x"} and {"answers":0} -- jq's // falls through only on null and
+# false, so every other scalar and the empty array survived as a non-empty
+# string. All three now exit 5; a real object is accepted unchanged.
+# The point is not tidiness. Callers index this by key -- the poller reads
+# h0.noul -- so a malformed response returned a null per heading, which reads
+# as a heading the classifier declined to answer rather than as a broken call.
+# Exit 5 is documented at the top of this file for exactly that case and was
+# unreachable for these three shapes.
+answers=$(jq -ce '.answers | select(type == "object")' "$out" 2>/dev/null) \
+  || { echo "jev: .answers missing or not an object" >&2; exit 5; }
 
 # A failed append must be loud. A caller that reports "recorded" over a write
 # that did not happen is the same absence-read-as-success this repository exists
