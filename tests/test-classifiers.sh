@@ -135,6 +135,26 @@ do
   ok "foreign-body marker: $body" "$want" "$got"
 done
 
+# --- a foreign review this gate cannot read is UNKNOWN, not clean ---
+# The blocklist criticism, answered: FOREIGN_BODY_RE alone enumerates where
+# findings appeared last time, so a heading rename made the count zero and a
+# body-only finding reached CLEAN. Recognition now runs both directions.
+for spec in \
+  'Findings: None|clean' \
+  'Comments generated: 0|clean' \
+  'No actionable comments were generated|clean' \
+  'Findings: 2|found' \
+  'Suppressed comments (3)|found' \
+  'Review overview: everything looks reasonable|unknown' \
+  'Some future format nobody has seen|unknown'
+do
+  body=${spec%|*}; want=${spec#*|}
+  if printf '%s' "$body" | grep -qE "$FOREIGN_BODY_RE"; then got=found
+  elif printf '%s' "$body" | grep -qE "$FOREIGN_CLEAN_RE"; then got=clean
+  else got=unknown; fi
+  ok "foreign review: $body" "$want" "$got"
+done
+
 # --- pipefail: a paginated read that dies after page 1 must not look complete ---
 # Without it the pipeline takes jq's status, and jq -s builds a valid PARTIAL
 # array from the pages that did arrive.

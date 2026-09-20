@@ -80,7 +80,10 @@ earlier version of this code printed one and should not have.
 
 `coderabbit-review-wait` can ask a classifier whether a collapsed section heading
 names work someone still has to look at. **It is off unless you turn it on, and
-it never changes a verdict.**
+it can only ever make a verdict stricter — `CLEAN` to `HOLD`, never the
+reverse.** A withheld result stays withheld whatever the classifier says, which
+is what makes every way it can fail — no key, a timeout, an HTTP error, a
+low-confidence answer — leave today's answer standing.
 
 You do not need it. Without a key, or with `JEV_SHADOW` unset, the scripts behave
 exactly as they do today.

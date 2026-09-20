@@ -72,6 +72,26 @@ HIDDEN_RE='(Nitpick comments|Outside diff range comments|Duplicate comments|File
 # wolf on clean pull requests is one people learn to override.
 FOREIGN_BODY_RE='Suppressed comments \([1-9][0-9]*\)|Comments generated:[*[:space:]]*[1-9][0-9]*|Findings:[*[:space:]]*[1-9][0-9]*'
 
+# The other half of the same question, and the one that keeps this from being a
+# blocklist: what a foreign review looks like when it found NOTHING.
+#
+# FOREIGN_BODY_RE alone enumerates where findings appeared last time, so a
+# vendor renaming a heading makes the count zero and a body-only finding reaches
+# CLEAN. CodeRabbit raised exactly that on lorenzini#2, and this repository's
+# own path instructions flag "a new pattern added for wherever findings appeared
+# last time" as the anti-pattern.
+#
+# So recognition runs in the positive direction too: a foreign review at head
+# that matches NEITHER pattern is UNKNOWN, not clean, and withholds the pass.
+# Measured spellings, Copilot both formats: "Findings: None" (ccr-overview-v2)
+# and "Comments generated: 0" (the older one).
+#
+# What this deliberately does NOT do is adjudicate the other vendor's verdict.
+# Three outcomes only -- found something, found nothing, cannot tell -- and two
+# of them hand the pull request to a human. Classifying a second vendor's
+# findings here would be a second gate living inside this one.
+FOREIGN_CLEAN_RE='Findings:[*[:space:]]*None|Comments generated:[*[:space:]]*0|No actionable comments were generated'
+
 # A resolved thread counts as DISPOSITIONED only when a HUMAN has commented in
 # it. SKILL.md:139 states the reply-before-resolve rule as the premise that
 # makes "resolved = handled" safe, but nothing enforced it: "@coderabbitai
@@ -696,6 +716,14 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
     fbody_hits=$(printf '%s\n' "$fbodies" \
       | grep -oE "$FOREIGN_BODY_RE" || true)
     n_fbody=$(printf '%s\n' "$fbody_hits" | grep -c '[^[:space:]]') || true
+    # A foreign review at head that states neither findings nor their absence is
+    # UNRECOGNISED, and unrecognised is not clean. Without this, the check was a
+    # blocklist: one vendor heading rename and a body-only finding walks through.
+    if [ "${n_fbody:-0}" -eq 0 ] && [ -n "$(printf '%s' "$fbodies" | tr -d '[:space:]')" ] \
+       && ! printf '%s\n' "$fbodies" | grep -qE "$FOREIGN_CLEAN_RE"; then
+      n_fbody=1
+      fbody_hits='(a review whose format this gate does not recognise -- neither findings nor their absence stated)'
+    fi
     resolved_ids=$(printf '%s\n' "$threads" | dispositioned_ids || printf '[]')
     [ -n "$resolved_ids" ] || resolved_ids='[]'
     n_silent=$(printf '%s\n' "$threads" | unreplied_resolved || echo 0)
