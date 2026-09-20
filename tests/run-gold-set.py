@@ -16,7 +16,7 @@ direction is to run this and compare against the recorded baselines in
 tests/fixtures/. Write a NEW result file per variant; overwriting an old one
 destroys the comparison that makes the next edit judgeable.
 """
-import json, os, pathlib, statistics, subprocess, sys, time
+import json, os, pathlib, re, statistics, subprocess, sys, time
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TAU = 0.5
@@ -101,6 +101,38 @@ out = {"round": f"{spec.get('_model', 'jev-1.13.0')}-{variant}", "family": "CR-l
 # the decision into the one syscall that can actually refuse, so the only way
 # to lose a recorded result is to delete it on purpose. Raised by CodeRabbit on
 # lorenzini#2 against the alternate path; the primary path had it too.
+# out["round"] is built from _model and _variant, which come from whichever
+# questions file was passed on the command line, and it becomes a FILENAME. A
+# separator or a ".." in either field puts the result somewhere other than
+# tests/fixtures, where the docstring above promises results live and where the
+# next run looks for a baseline to compare against.
+#
+# Deliberately NOT framed as an attack. The operator chooses the questions file
+# and already has write access to everything this script can reach, so a
+# containment check against a hostile _variant would be guarding a door its own
+# key opens. The failure worth guarding is ordinary: a variant named "v4/semantic"
+# or a _model copied with a stray slash writes the result out of the comparison
+# set and nothing says so. A whitelist is checked here rather than a resolve()
+# containment check because the whitelist makes traversal unrepresentable, which
+# leaves the containment check carrying no information -- and a check carrying no
+# information can still be wrong.
+#
+# Measured 2026-09-20 against this exact template, printing the resolved path
+# rather than trusting a prefix comparison (the first probe's containment test
+# was wrong and said every case stayed inside):
+#   "v3"                 -> tests/fixtures/result-cr-labels-jev-1.13.0-v3.json
+#   "../../../tmp/pwned" -> tests/tmp/pwned.json                      ESCAPES
+#   "v4/semantic"        -> tests/fixtures/result-...-v4/semantic.json  wrong dir
+#   ".."                 -> tests/fixtures/result-...-...json          harmless
+# ".." is accepted by the pattern and stays put, because the value is always
+# embedded mid-filename and never becomes a path component of its own. Left
+# accepted rather than special-cased: rejecting it would be guarding against a
+# shape this template cannot produce.
+SAFE = re.compile(r"\A[A-Za-z0-9._-]+\Z")
+for field, value in (("_model", spec.get("_model", "jev-1.13.0")), ("_variant", variant)):
+    if not SAFE.match(str(value)):
+        sys.exit(f"{field} is {value!r}; it becomes part of a filename, so it must "
+                 f"match [A-Za-z0-9._-]+. Fix it in {qfile}.")
 base = ROOT / f"tests/fixtures/result-cr-labels-{out['round']}.json"
 stamp = int(time.time())
 p, note = base, None
