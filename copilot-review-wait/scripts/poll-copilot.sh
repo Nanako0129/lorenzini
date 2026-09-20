@@ -407,7 +407,23 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
       # GraphQL omits the "[bot]" suffix REST carries, so the owned set is
       # spelled the GraphQL way, and Copilot needs BOTH of its logins here for
       # the same reason the comment filter above does.
-      threads=$(gh api graphql -f query="query{repository(owner:\"${REPO%%/*}\",name:\"${REPO##*/}\"){pullRequest(number:$PR){reviewThreads(first:100){nodes{isResolved comments(first:50){nodes{path author{login __typename}}}}}}}}" 2>/dev/null || printf '{}')
+      # A FAILED GRAPHQL CALL IS NOT AN EMPTY THREAD SET. The `|| printf '{}'`
+      # that was here on the first version of this guard turned a rate limit or
+      # a 5xx into "no threads", and the guard then fell through to CLEAN --
+      # the third time today that a fallback value was written where a retry
+      # belonged, and the first time it was written INTO a guard against
+      # exactly that. Raised by CodeRabbit on lorenzini#1.
+      #
+      # The shape is checked, not just the exit status: GraphQL answers a failed
+      # query with HTTP 200 and an `errors` array, so a zero exit says nothing
+      # about whether `reviewThreads` came back.
+      if ! threads=$(gh api graphql -f query="query{repository(owner:\"${REPO%%/*}\",name:\"${REPO##*/}\"){pullRequest(number:$PR){reviewThreads(first:100){nodes{isResolved comments(first:50){nodes{path author{login __typename}}}}}}}}" 2>/dev/null) \
+         || ! printf '%s\n' "$threads" | jq -e '.data.repository.pullRequest.reviewThreads.nodes | type == "array"' >/dev/null 2>&1; then
+        [ "${thread_warned:-0}" = "1" ] || { echo "Could not read the review threads. Retrying rather than counting zero findings."; thread_warned=1; }
+        clean_seen=0
+        sleep "$INTERVAL"
+        continue
+      fi
       foreign=$(printf '%s\n' "$threads" | jq -r --argjson owned '["copilot-pull-request-reviewer","Copilot"]' '
         [.data.repository.pullRequest.reviewThreads.nodes[]?
          | select(.isResolved | not)
@@ -421,6 +437,49 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
       # below fail with "integer expected" -- falling through to CLEAN. That
       # happened in the sibling script on its first live run.
       n_foreign=$(printf '%s\n' "$foreign" | grep -c '[^[:space:]]') || true
+
+      # A FOREIGN BOT'S FINDINGS NEED NOT CREATE A THREAD AT ALL. Raised by
+      # CodeRabbit on lorenzini#1, about its own behaviour: it parks
+      # outside-diff-range, nitpick and duplicate findings in the REVIEW BODY,
+      # which produces no reviewThreads entry, so a guard reading only threads
+      # counts zero and falls through to CLEAN.
+      #
+      # That is the same shape as this repository's entry 11 and as the
+      # outside-diff verdict bug in the sibling script -- a review whose
+      # findings are all in the body -- now reappearing one level up, inside the
+      # guard written to see the other reviewer at all. The threads check was
+      # answering "did the other bot open a conversation", not "did it find
+      # something".
+      #
+      # Only unambiguous statements of findings count, so this cannot block
+      # forever on an ordinary clean foreign review: the collapsed-section
+      # headings with their own counts, and a nonzero actionable count. A
+      # foreign review saying "No actionable comments were generated" matches
+      # nothing here and does not withhold the pass.
+      fbodies=$(printf '%s\n' "$reviews" | jq -r --arg h "$HEAD" --argjson owned '["copilot-pull-request-reviewer[bot]","Copilot"]' '
+        [.[][] | select(.commit_id == $h)
+         | select((.user.type // "") == "Bot")
+         | (.user.login // "") as $l | select(($owned | index($l)) | not)
+         | "\($l)\t\(.body // "")"] | .[]' 2>/dev/null)
+      fbody_hits=$(printf '%s\n' "$fbodies" \
+        | grep -oE '(Nitpick comments|Outside diff range comments|Duplicate comments|Files skipped from review[^(]*) \([0-9]+\)|Actionable comments posted: [1-9][0-9]*' || true)
+      n_fbody=$(printf '%s\n' "$fbody_hits" | grep -c '[^[:space:]]') || true
+
+      if [ "${n_fbody:-0}" -ge 1 ]; then
+        echo
+        echo "Copilot is clean on this commit, but another reviewer's review at this same"
+        echo "commit reports findings in its BODY, where they create no review thread."
+        echo "A clean verdict here means COPILOT found nothing -- not that the pull"
+        echo "request is clean."
+        echo "------------------------------------------------------------"
+        printf '%s\n' "$fbodies" | cut -f1 | sort -u | sed 's/^/reviewer: /'
+        printf '%s\n' "$fbody_hits"
+        echo "------------------------------------------------------------"
+        echo "Open the PR and read that review in full, then disposition each finding."
+        echo "RESULT=OTHERBOT count=$(( ${n_foreign:-0} + n_fbody ))"
+        exit 0
+      fi
+
       if [ "${n_foreign:-0}" -ge 1 ]; then
         echo
         echo "Copilot is clean on this commit, but $n_foreign unresolved finding(s) on this PR"
