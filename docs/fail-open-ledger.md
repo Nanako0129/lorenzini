@@ -376,13 +376,35 @@ trace the routed poller reads. `NyanCogs#29` is the other demonstration — auto
 review disabled, something triggered CodeRabbit anyway, three rounds and eight
 inline findings, three of them on lines Copilot's first round never touched.
 
-**Now:** nothing yet. This is the open entry. The fix is to stop filtering by
-login, group findings by author, and withhold `CLEAN` with a named verdict
-whenever a reviewer this gate does not own has undispositioned findings — and
-until that ships, a clean verdict from either poller means *the reviewer it was
-written for found nothing*, which is not the same as the pull request being
-clean. Recorded here as open rather than described as handled, because the entry
-above this one is about exactly that difference.
+**Now:** `RESULT=OTHERBOT count=N`, in **both** pollers. Checked last, immediately
+before `CLEAN`, because it is the only gate about a reviewer the script cannot
+read. It does not classify the other bot's findings — parsing a second vendor's
+body format inside this one would be a second gate living in the first — it
+refuses the pass, names the login and the file, and sends the operator to the
+pull request. A thread resolved with a human reply counts as dispositioned, the
+same rule each poller already applies to its own threads.
+
+**This entry was open for one commit, and it is the entry that closed itself.**
+The guard's first live run was against `lorenzini#1`, where it flagged **four
+unresolved Copilot findings that no verdict on that pull request had ever
+mentioned** — the blind spot was still open, on this repository, at the moment
+the code to detect it was written. Two were stale. Two were live defects in
+`poll-copilot.sh`: a `head -14` that truncated the output of the "a human must
+read this" verdict past where a per-file table puts its findings, and a format
+check that listed two literal markers for the *unclean* format and therefore
+fell through to `CLEAN` on any body that was neither that nor the old format.
+The second is the blocklist problem sitting inside the branch written to close a
+fail-open, which is this ledger in miniature.
+
+**Two bugs while building the guard, both the failure it exists to prevent.**
+Inside jq's `index(...)` the input is the filter's own input, not the
+surrounding object, so `$owned | index(.author.login)` indexed the owned array
+with the string `"author"` and aborted the expression — against live data that
+prints nothing and counts zero. Caught by a unit test, not by a live run. Then
+`grep -c` printed `0` *and* exited 1, so a `|| echo 0` fallback appended a
+second zero, the numeric test failed with `integer expected`, and the run fell
+through to `CLEAN`: a guard against a fail-open, failing open, on its first live
+run against a real pull request.
 
 ---
 
