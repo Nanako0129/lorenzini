@@ -410,6 +410,24 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   # CodeRabbit posts a fresh comment whenever it acts.
   last_note=$(printf '%s\n' "$icomments" | jq -r --arg b "$BOT" \
     '[.[][] | select(.user.login == $b)] | last | .body // ""' 2>/dev/null)
+  # PAUSED is a third member of the family that SKIPPED already belongs to, and
+  # it was found the same way: a poll sat for twenty minutes on lorenzini#1 and
+  # reported TIMEOUT while the most recent bot comment read "Reviews paused".
+  # auto_pause_after_reviewed_commits defaults to 5, that pull request had seven
+  # commits and six reviews, and nothing was ever going to arrive.
+  #
+  # TIMEOUT says the verdict may still come. PAUSED says it will not until
+  # someone asks. Reported as the same thing, the operator waits for nothing --
+  # which is what happened here, for the full twenty minutes.
+  case "$last_note" in
+    *"Reviews paused"*)
+      echo "CodeRabbit has PAUSED automatic reviews on this PR (its most recent comment says so)."
+      echo "auto_pause_after_reviewed_commits defaults to 5; this is not a slow review and"
+      echo "waiting will not produce one. Resume with '@coderabbitai resume', ask for a single"
+      echo "round with '@coderabbitai review', or re-run this with --request."
+      echo "RESULT=ERROR reviews paused -- nothing will arrive until one is requested"
+      exit 2 ;;
+  esac
   case "$last_note" in
     *"Review skipped"*)
       echo "CodeRabbit skipped this PR (its most recent comment is a skip notice):"
