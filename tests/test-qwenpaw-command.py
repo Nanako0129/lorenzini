@@ -120,7 +120,15 @@ ok("without --repo the agent is told to resolve it first",
 # whole repository is about, committed inside its own test: recognition has to
 # say what a pass looks like, not enumerate the bad shapes someone thought of.
 # So the span must MATCH the command, and anything else fails by default.
-COMMAND = re.compile(r"\Agh api repos/[A-Za-z0-9._/-]+ -q \.stargazers_count\Z")
+# Two segments, spelled out. The first version put `/` inside one character
+# class, so `repos/a/b/c` and `repos//a` matched -- a positive check that was
+# still loose enough to accept a path no gh call can use. The segment set is
+# the one _REPO validates --repo against, so the assertion and the guard agree
+# on what a repository name is.
+SEGMENT = r"[A-Za-z0-9._-]+"
+COMMAND = re.compile(
+    rf"\Agh api repos/{SEGMENT}/{SEGMENT} -q \.stargazers_count\Z"
+)
 for label, body in (("no --repo", text_norepo), ("--repo acme/app", text)):
     spans = re.findall(r"`([^`]+)`", body)
     # A vacuous loop asserts nothing. The guard only means something if there
