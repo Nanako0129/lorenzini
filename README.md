@@ -19,9 +19,9 @@ The record of every missed finding lives in [`docs/fail-open-ledger.md`](docs/fa
 ## Reviewer skills and routing
 
 Routing is split across three skills:
-- [`coderabbit-review-wait`](coderabbit-review-wait/): CodeRabbit (`coderabbitai[bot]`), for repositories with 10 or more stars (including `lorenzini` itself at 13 stars).
-- [`copilot-review-wait`](copilot-review-wait/): GitHub Copilot (`copilot-pull-request-reviewer[bot]`), for repositories under 10 stars.
-- [`codex-review-wait`](codex-review-wait/): Codex (`chatgpt-codex-connector`), dormant since 2026-09-17 following an upstream subscription suspension.
+- [`coderabbit-review-wait`](skills/coderabbit-review-wait/): CodeRabbit (`coderabbitai[bot]`), for repositories with 10 or more stars (including `lorenzini` itself at 13 stars).
+- [`copilot-review-wait`](skills/copilot-review-wait/): GitHub Copilot (`copilot-pull-request-reviewer[bot]`), for repositories under 10 stars.
+- [`codex-review-wait`](skills/codex-review-wait/): Codex (`chatgpt-codex-connector`), dormant since 2026-09-17 following an upstream subscription suspension.
 
 This division is a vendor constraint, not an architectural choice. CodeRabbit's open-source plan requires manual review triggers on public repositories with fewer than 10 stars, so those repositories route to Copilot. Query star counts with the GitHub CLI before configuring:
 
@@ -49,33 +49,105 @@ Each skill polls until a definitive verdict is recorded against the current head
 | `RESULT=TIMEOUT` | Head did not receive a verdict within the polling deadline. | Gate held. Never treat a timeout as approval. |
 | `RESULT=ERROR ...` | Polling cannot resolve this state: draft PRs, paused or skipped reviews, exhausted GitHub API rate limits, or an unresolvable repository/PR. | Fix the precondition. Rate limits report their reset time directly rather than polling to the deadline. |
 
-## Installation and checkout hazards
+## Install
 
-Clone at a release tag and create symlinks in `~/.claude/skills/`:
+These are portable [Agent Skills](https://agentskills.io/specification): one canonical `SKILL.md` per reviewer under `skills/`, no per-platform forks. Every command below installs at **user scope** — once, for every project.
+
+Requires an authenticated `gh` CLI and `jq`.
+
+### Any agent (Skills CLI)
+
+```bash
+npx skills add Nanako0129/lorenzini -g     # -g = user scope
+npx skills update lorenzini -g
+```
+
+### Claude Code
+
+```bash
+claude plugin marketplace add Nanako0129/lorenzini
+claude plugin install lorenzini@lorenzini --scope user
+
+# update
+claude plugin marketplace update lorenzini
+claude plugin update lorenzini
+```
+
+### Codex
+
+```bash
+codex plugin marketplace add Nanako0129/lorenzini
+codex plugin add lorenzini@lorenzini
+
+# update — refresh the snapshot, then re-add
+codex plugin marketplace upgrade lorenzini
+codex plugin add lorenzini@lorenzini
+```
+
+### Antigravity
+
+```bash
+agy plugin install https://github.com/Nanako0129/lorenzini
+```
+
+### Grok Build
+
+```bash
+grok plugin install Nanako0129/lorenzini --trust
+grok plugin update
+```
+
+### QwenPaw
+
+```bash
+git clone https://github.com/Nanako0129/lorenzini
+qwenpaw plugin install ./lorenzini/.qwenpaw-plugin
+```
+
+> **What "installs" means here.** The packaging was exercised to the point that each manifest parses and the skills resolve. Whether every host then loads and runs them as documented has not been checked platform by platform, and the QwenPaw entry point has not been run at all — no QwenPaw install was available. File an issue if your agent trips on it.
+
+### Removing it
+
+Kept out of the blocks above, because those are meant to be copied whole and
+an uninstall line at the bottom of an install block undoes the install.
+
+```bash
+npx skills remove lorenzini -g          # Skills CLI
+qwenpaw plugin uninstall lorenzini      # QwenPaw
+```
+
+Only these two routes' removal commands are recorded here. The others were not
+run, and guessing a command that deletes something is worse than omitting it —
+check your own host's documentation.
+
+### From a clone, pinned to a tag
+
+The manual route, and the one to use if you want the gate to change only when you say so:
 
 ```bash
 git clone https://github.com/Nanako0129/lorenzini.git ~/side-project/lorenzini
-cd ~/side-project/lorenzini && git checkout v0.2.1
+cd ~/side-project/lorenzini && git checkout v0.2.2
 for s in codex copilot coderabbit; do
-  ln -s ~/side-project/lorenzini/$s-review-wait ~/.claude/skills/$s-review-wait
+  ln -sfn ~/side-project/lorenzini/skills/$s-review-wait ~/.claude/skills/$s-review-wait
 done
 ```
 
-This setup requires an authenticated `gh` CLI and `jq`.
+> **Upgrading from v0.2.1 or earlier breaks this symlink.** The three skill directories moved from the repository root into `skills/` so the package can be installed by the tools above. A clone that pulls past that point leaves the old symlinks dangling, and a dangling skill symlink does not announce itself — the skill is simply gone. Re-run the loop above, or switch to one of the package installs.
 
-Pin symlinks to a release tag, never to `main`. Because these skills govern merge safety and `main` is where newly caught fail-opens are patched, running on `main` means an ordinary `git pull` silently changes your gate logic. Symlinks target directory paths rather than commits. Update deliberately:
+Pin to a tag, never to `main`. These skills govern merge safety and `main` is where each newly caught fail-open is patched, so on `main` an ordinary `git pull` changes your gate. Symlinks target directories rather than commits, so they survive:
 
 ```bash
-git fetch --tags && git checkout v0.2.1
+git fetch --tags && git checkout v0.2.2
 ```
 
-If you develop inside `lorenzini`, your checked-out branch is your active gate. On 2026-09-20, running the same poller on the same pull request minutes apart produced `RESULT=CLEAN` on one branch and `RESULT=NOT_REVIEWED` on another—evaluating a review body that stated the source files were never read.
+If you develop inside `lorenzini`, your checked-out branch **is** your active gate. On 2026-09-20, the same poller on the same pull request minutes apart produced `RESULT=CLEAN` from one branch and `RESULT=NOT_REVIEWED` from another — over a review body stating the source files were never read.
 
 ## Version support
 
 | Tag | Status | Notes |
 |---|---|---|
-| `v0.2.1` | Usable | Current baseline. Fixes a race where a skip notice was read as terminal while the review was starting, and routes a spent Copilot quota to CodeRabbit instead of stopping. |
+| `v0.2.2` | Usable | Current baseline. Moves the three skill directories into `skills/` and adds five package manifests, so the gate installs as a plugin rather than a hand-made symlink. **Breaking:** an existing `~/.claude/skills/` symlink into this clone goes dangling on upgrade. |
+| `v0.2.1` | Superseded | Previous baseline. Fixes a race where a skip notice was read as terminal while the review was starting, and routes a spent Copilot quota to CodeRabbit instead of stopping. |
 | `v0.2.0` | Superseded | Has the cross-reviewer, non-review and format recognition guards, but treats a skip notice as terminal on first sight. On a repository with CodeRabbit auto review disabled, that fires every round. |
 | `v0.1.1` | Superseded | Lacks cross-reviewer guards, non-review detection, and updated format recognition. |
 | `v0.1.0` | Do not use | Contains four distinct gates that report passes without earning them. |
@@ -114,12 +186,12 @@ Jev produces four distinct outputs, kept deliberately distinguishable:
 
 Collapsing the first three outputs into the same silence is the exact failure documented across most of the ledger. The `INCOMPLETE` state exists because the very first version of this classifier script made that exact error: partial API responses generated an empty flags list, which the script reported as "nothing missed."
 
-The criteria file *is* the classifier. Prompts live in `coderabbit-review-wait/jev-questions-v3.json` rather than inline code because altering a single word shifts scoring behavior. In gold set benchmarks, label `L01` ("🧹 Nitpick comments (3)") represents legitimate findings. In `v1`, the classifier scored it 0.37 (falling below the 0.50 threshold) simply because the word "nitpick" was absent from the prompt criteria. Explicitly naming "nitpick" in `v2` raised that same heading's score to 0.697. Every execution records a SHA hash of the question set, and prompt iterations are tracked in filenames rather than guessed.
+The criteria file *is* the classifier. Prompts live in `skills/coderabbit-review-wait/jev-questions-v3.json` rather than inline code because altering a single word shifts scoring behavior. In gold set benchmarks, label `L01` ("🧹 Nitpick comments (3)") represents legitimate findings. In `v1`, the classifier scored it 0.37 (falling below the 0.50 threshold) simply because the word "nitpick" was absent from the prompt criteria. Explicitly naming "nitpick" in `v2` raised that same heading's score to 0.697. Every execution records a SHA hash of the question set, and prompt iterations are tracked in filenames rather than guessed.
 
 To evaluate prompt modifications against the fixture baseline:
 
 ```bash
-python3 tests/run-gold-set.py 3 coderabbit-review-wait/jev-questions-v4.json
+python3 tests/run-gold-set.py 3 skills/coderabbit-review-wait/jev-questions-v4.json
 ```
 
 Benchmarks run across 30 labels in `tests/fixtures/`, evaluated three times per release:

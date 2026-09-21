@@ -283,9 +283,15 @@ jev_shadow() {
   # repository: a hardcoded ~/side-project/... works on exactly one machine, and
   # the thing it points at is not version controlled, so it can change or vanish
   # without a diff. Resolved from this script'"'"'s own location so a clone works.
-  local here; here=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+  # Resolved from this script's own location, and everything it needs is a
+  # sibling inside this skill. That is not tidiness: a plugin install copies
+  # skills/coderabbit-review-wait/ and nothing above it, so a path reaching for
+  # the repository root would point at a file the installed copy does not have.
+  # jev.sh used to live at the repository root and was moved here for exactly
+  # that reason.
+  local here; here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
   jev="${JEV_BIN:-$here/scripts/jev.sh}"
-  local qfile="${JEV_QUESTIONS:-$here/coderabbit-review-wait/jev-questions-v3.json}"
+  local qfile="${JEV_QUESTIONS:-$here/jev-questions-v3.json}"
   [ -r "$qfile" ] || { echo "(jev: unavailable -- questions file $qfile not readable)"; return 0; }
   [ -x "$jev" ] || { echo "(jev: unavailable -- $jev not executable)"; return 0; }
 

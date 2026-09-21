@@ -172,6 +172,17 @@ That review carried **zero** inline comments; the finding existed only in the bo
 bash <skill-dir>/scripts/poll-coderabbit.sh [PR_NUMBER] [--repo OWNER/NAME] [--timeout 900] [--interval 20] [--request]
 ```
 
+> **If that command fails with `No such file or directory` and exit 127**, the
+> skill directory this file was loaded from does not contain the script. The
+> usual cause is a stale symlink: the three skill directories moved from the
+> repository root into `skills/` in v0.2.2, so a `~/.claude/skills/` symlink
+> created before that points at a path which no longer exists. A dangling skill
+> symlink does not announce itself — `ls` still lists the name and the skill
+> still appears in the loaded set, because the link itself is intact. Re-create
+> it against `skills/<name>` (see the repository README) or reinstall the
+> package. It fails closed: the script never ran, so no verdict was produced and
+> nothing can have been passed on one.
+
 Use `run_in_background: true`. Keep the working directory in the target repo, or pass `--repo`. `--request` posts `@coderabbitai review`; it is **not** needed after a push, since CodeRabbit re-reviews new commits on its own.
 
 | Result | Meaning | Next step |

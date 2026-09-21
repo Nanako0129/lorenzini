@@ -14,7 +14,7 @@
 set -u
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # shellcheck source=/dev/null
-source "$ROOT/coderabbit-review-wait/scripts/poll-coderabbit.sh"
+source "$ROOT/skills/coderabbit-review-wait/scripts/poll-coderabbit.sh"
 
 pass=0 fail=0
 

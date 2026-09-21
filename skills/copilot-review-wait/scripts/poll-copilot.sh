@@ -230,9 +230,14 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
           echo
           echo "SWITCH REVIEWERS. Do not wait for the quota and do not merge on this verdict:"
           echo "  gh pr comment $PR --repo $REPO --body '@coderabbitai review'"
+          # <skill-dir> is the token every SKILL.md in this package uses for the
+          # skill's own directory, so the sibling skill is reached through it
+          # rather than through a <skills-dir> that is defined nowhere. The
+          # reader here is an agent following SKILL.md; a placeholder that
+          # appears in no document is one it cannot resolve.
           echo "  bash <skill-dir>/../coderabbit-review-wait/scripts/poll-coderabbit.sh $PR --repo $REPO"
           echo "The CodeRabbit gate defines a clean pass differently; read it from"
-          echo "coderabbit-review-wait/SKILL.md rather than carrying this one's logic across."
+          echo "<skill-dir>/../coderabbit-review-wait/SKILL.md rather than carrying this one's logic across."
           echo "RESULT=NOT_REVIEWED reason=quota fallback=coderabbit"
           exit 0
         fi

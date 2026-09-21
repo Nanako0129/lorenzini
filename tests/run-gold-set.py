@@ -3,7 +3,7 @@
 
     python3 tests/run-gold-set.py [repeats] [questions-file]
 
-Defaults: 3 repeats, coderabbit-review-wait/jev-questions-v3.json.
+Defaults: 3 repeats, skills/coderabbit-review-wait/jev-questions-v3.json.
 
 Why repeats: a single pass cannot tell a stable answer from one sitting on the
 threshold. The flip rate -- how many labels cross 0.5 between runs -- is the
@@ -32,7 +32,7 @@ repeats = int(sys.argv[1]) if len(sys.argv) > 1 else 3
 if repeats < 2:
     sys.exit(f"repeats is {repeats}; flip rate needs at least 2 runs to mean anything. "
              "A single pass cannot flip, so it would report 0/N by arithmetic.")
-qfile = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else ROOT / "coderabbit-review-wait/jev-questions-v3.json"
+qfile = pathlib.Path(sys.argv[2]) if len(sys.argv) > 2 else ROOT / "skills/coderabbit-review-wait/jev-questions-v3.json"
 
 spec = json.load(open(qfile))
 gold = json.load(open(ROOT / "tests/fixtures/gold-cr-labels.json"))
@@ -63,7 +63,7 @@ def call():
     # slack, so a genuine slow response is not mistaken for a hang.
     inner = int(os.environ.get("JEV_TIMEOUT", "8"))
     try:
-        r = subprocess.run([str(ROOT / "scripts/jev.sh"), "-"],
+        r = subprocess.run([str(ROOT / "skills/coderabbit-review-wait/scripts/jev.sh"), "-"],
                            input=json.dumps(body), capture_output=True, text=True,
                            timeout=inner + 20)
     except subprocess.TimeoutExpired:
