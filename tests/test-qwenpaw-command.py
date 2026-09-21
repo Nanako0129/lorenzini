@@ -80,6 +80,13 @@ ok("flags only at the tail",
 # -- rejections ---------------------------------------------------------
 ok("empty args prints usage", run("")[0].startswith("Usage:"))
 ok("non-numeric PR rejected", "is not a pull request number" in run("abc")[0])
+# str.isdigit() is Unicode-aware, so these all returned True and reached the
+# prompt. The poller's [0-9]* case pattern then drops them through its *)
+# branch without an error and falls back to the current branch's pull request,
+# so the gate would have adjudicated a different PR than it was asked about.
+for wide in ("１２", "١٢", "١2"):
+    ok(f"non-ASCII digits rejected: {wide}",
+       "is not a pull request number" in run(wide)[0])
 ok("unknown reviewer rejected",
    "Unknown --reviewer" in run("12 --reviewer gemini")[0])
 ok("rejections address the person, not the agent", run("")[1] == "assistant")

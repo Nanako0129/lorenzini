@@ -95,7 +95,16 @@ async def _slash_lorenzini(ctx, args: str):
     pr, flags = _split_flags(args or "")
     if not pr:
         return reply(USAGE)
-    if not pr.isdigit():
+    # ASCII digits only. str.isdigit() is Unicode-aware and returns True for
+    # fullwidth forms such as "１２", which then take this path: the composed
+    # prompt names PR １２, the poller's argument parser matches positional PR
+    # numbers with the shell pattern [0-9]*, fullwidth digits do not match it,
+    # its *) branch shifts the value away without an error, PR stays empty,
+    # and poll-coderabbit.sh:508 falls back to resolving the pull request from
+    # the current branch. The gate then reports a verdict on a different pull
+    # request than the one it was asked about, and says nothing about the
+    # substitution. Measured end to end, not inferred from the docstring.
+    if re.fullmatch(r"[0-9]+", pr) is None:
         return reply(
             f"'{pr}' is not a pull request number.\n\n{USAGE}"
         )
