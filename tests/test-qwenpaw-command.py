@@ -112,10 +112,23 @@ ok("without --repo the agent is told to resolve it first",
 # Whatever sits between backticks is what an agent will paste into a shell.
 # The first version interpolated "OWNER/NAME, resolved from the working
 # directory" into the command position, producing a gh invocation with prose
-# in the middle of it. Every backticked span must survive on its own.
-for span in re.findall(r"`([^`]+)`", text_norepo):
-    ok(f"backticked span is a command, not prose: {span}",
-       "," not in span and " the " not in span)
+# in the middle of it.
+#
+# The first version of THIS check was a blocklist -- it rejected a comma and
+# the word "the", so `gh api repos/OWNER/NAME resolved from working directory
+# -q .stargazers_count` walked straight past it. That is the mistake this
+# whole repository is about, committed inside its own test: recognition has to
+# say what a pass looks like, not enumerate the bad shapes someone thought of.
+# So the span must MATCH the command, and anything else fails by default.
+COMMAND = re.compile(r"\Agh api repos/[A-Za-z0-9._/-]+ -q \.stargazers_count\Z")
+for label, body in (("no --repo", text_norepo), ("--repo acme/app", text)):
+    spans = re.findall(r"`([^`]+)`", body)
+    # A vacuous loop asserts nothing. The guard only means something if there
+    # is a span to check, so the count is an assertion in its own right.
+    ok(f"{label}: prompt carries exactly one backticked span", len(spans) == 1)
+    for span in spans:
+        ok(f"{label}: span is the expected command, not prose: {span}",
+           COMMAND.match(span) is not None)
 
 text_cr, _ = run("12 --repo acme/app --reviewer coderabbit")
 ok("explicit reviewer names its skill",

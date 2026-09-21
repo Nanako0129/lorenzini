@@ -60,7 +60,6 @@ Requires an authenticated `gh` CLI and `jq`.
 ```bash
 npx skills add Nanako0129/lorenzini -g     # -g = user scope
 npx skills update lorenzini -g
-npx skills remove lorenzini -g
 ```
 
 ### Claude Code
@@ -103,10 +102,23 @@ grok plugin update
 ```bash
 git clone https://github.com/Nanako0129/lorenzini
 qwenpaw plugin install ./lorenzini/.qwenpaw-plugin
-qwenpaw plugin uninstall lorenzini
 ```
 
 > **What "installs" means here.** The packaging was exercised to the point that each manifest parses and the skills resolve. Whether every host then loads and runs them as documented has not been checked platform by platform, and the QwenPaw entry point has not been run at all — no QwenPaw install was available. File an issue if your agent trips on it.
+
+### Removing it
+
+Kept out of the blocks above, because those are meant to be copied whole and
+an uninstall line at the bottom of an install block undoes the install.
+
+```bash
+npx skills remove lorenzini -g          # Skills CLI
+qwenpaw plugin uninstall lorenzini      # QwenPaw
+```
+
+Only these two routes' removal commands are recorded here. The others were not
+run, and guessing a command that deletes something is worse than omitting it —
+check your own host's documentation.
 
 ### From a clone, pinned to a tag
 

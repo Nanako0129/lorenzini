@@ -60,7 +60,6 @@ gh api repos/OWNER/NAME -q .stargazers_count
 ```bash
 npx skills add Nanako0129/lorenzini -g     # -g 是 user scope
 npx skills update lorenzini -g
-npx skills remove lorenzini -g
 ```
 
 ### Claude Code
@@ -103,10 +102,22 @@ grok plugin update
 ```bash
 git clone https://github.com/Nanako0129/lorenzini
 qwenpaw plugin install ./lorenzini/.qwenpaw-plugin
-qwenpaw plugin uninstall lorenzini
 ```
 
 > **「可以安裝」在這裡的意思。** 打包驗到每份 manifest 都能解析、skill 路徑都解得開為止。各平台載入之後是否照文件運作，沒有逐一驗證；QwenPaw 的進入點完全沒跑過，因為手邊沒有可用的 QwenPaw。你的 agent 卡住的話請開 issue。
+
+### 移除
+
+刻意不放進上面那些區塊：它們是設計成整段複製的，而 install 區塊結尾擺一行
+uninstall，複製下去就是裝完立刻移除。
+
+```bash
+npx skills remove lorenzini -g          # Skills CLI
+qwenpaw plugin uninstall lorenzini      # QwenPaw
+```
+
+這裡只記這兩條路線的移除指令。其餘四條沒有實際跑過，而**猜一條會刪東西的指令，
+比不寫還糟**——請查你自己那個 host 的文件。
 
 ### 從 clone 安裝並固定在 tag
 
