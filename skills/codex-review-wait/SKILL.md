@@ -44,7 +44,7 @@ bash <skill-dir>/scripts/poll-codex.sh [PR_NUMBER] [--repo OWNER/NAME] [--timeou
 
 (`<skill-dir>` is this skill's base directory, printed at the top when the skill loads.)
 
-Use `run_in_background: true`. `PR_NUMBER` is optional (defaults to the current branch's PR).
+Use `run_in_background: true`. `PR_NUMBER` is optional (defaults to the current branch's PR). Omitting `PR_NUMBER` resolves the current branch's PR, and that only works from inside the target repository: `--repo` (or `GH_REPO`) names a repository the current branch says nothing about, so the two cannot be combined and passing `--repo` without a number is refused.
 
 > **If that command fails with `No such file or directory` and exit 127**, the
 > skill directory this file was loaded from does not contain the script. The

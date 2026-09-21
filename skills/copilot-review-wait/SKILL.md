@@ -142,7 +142,7 @@ Run the poller in the **background** (so you are not blocked; you get notified w
 bash <skill-dir>/scripts/poll-copilot.sh [PR_NUMBER] [--repo OWNER/NAME] [--timeout 900] [--interval 20] [--request]
 ```
 
-Use `run_in_background: true`. `PR_NUMBER` is optional (defaults to the current branch's PR).
+Use `run_in_background: true`. `PR_NUMBER` is optional (defaults to the current branch's PR). Omitting `PR_NUMBER` resolves the current branch's PR, and that only works from inside the target repository: `--repo` (or `GH_REPO`) names a repository the current branch says nothing about, so the two cannot be combined and passing `--repo` without a number is refused.
 
 > **If that command fails with `No such file or directory` and exit 127**, the
 > skill directory this file was loaded from does not contain the script. The

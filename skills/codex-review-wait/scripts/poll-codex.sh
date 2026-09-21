@@ -46,8 +46,26 @@ else
   REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null) \
     || { echo "RESULT=ERROR cannot resolve the repo -- run from the target git repo, or pass --repo OWNER/NAME (or set GH_REPO)"; exit 2; }
 fi
-[ -n "$PR" ] || PR=$(gh pr view --repo "$REPO" --json number --jq .number 2>/dev/null) \
-  || { echo "RESULT=ERROR no PR for the current branch (pass a PR number, or --repo with a PR number)"; exit 2; }
+if [ -z "$PR" ]; then
+  # `gh pr view` refuses to run without a selector when --repo is given --
+  # measured: "argument required when using the --repo flag". $REPO always has
+  # a value by this point, so passing it made this fallback unreachable on
+  # every branch, while the error below claimed the branch had no PR. It said
+  # that on branches that had one, which is the worse half: someone debugging
+  # it checks their branch and their PR, finds both correct, and has no reason
+  # to suspect the call.
+  #
+  # The current branch is evidence about the repository the shell is standing
+  # in and about no other. When the repository was named explicitly there is
+  # nothing to fall back to, so say that rather than resolving a branch name
+  # against a repository it does not belong to.
+  if [ -n "$REPO_ARG" ] || [ -n "${GH_REPO:-}" ]; then
+    echo "RESULT=ERROR a PR number is required when the repo is named with --repo or GH_REPO -- the current branch is not evidence about another repository"
+    exit 2
+  fi
+  PR=$(gh pr view --json number --jq .number 2>/dev/null) \
+    || { echo "RESULT=ERROR no PR for the current branch -- pass a PR number"; exit 2; }
+fi
 HEAD=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid 2>/dev/null) \
   || { echo "RESULT=ERROR cannot read PR #$PR in $REPO"; exit 2; }
 if [ "$(gh pr view "$PR" --repo "$REPO" --json isDraft --jq .isDraft 2>/dev/null)" = "true" ]; then

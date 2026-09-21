@@ -183,7 +183,7 @@ bash <skill-dir>/scripts/poll-coderabbit.sh [PR_NUMBER] [--repo OWNER/NAME] [--t
 > package. It fails closed: the script never ran, so no verdict was produced and
 > nothing can have been passed on one.
 
-Use `run_in_background: true`. Keep the working directory in the target repo, or pass `--repo`. `--request` posts `@coderabbitai review`; it is **not** needed after a push, since CodeRabbit re-reviews new commits on its own.
+Use `run_in_background: true`. Keep the working directory in the target repo, or pass `--repo`. Omitting `PR_NUMBER` resolves the current branch's PR, and that only works from inside the target repository: `--repo` (or `GH_REPO`) names a repository the current branch says nothing about, so the two cannot be combined and passing `--repo` without a number is refused. `--request` posts `@coderabbitai review`; it is **not** needed after a push, since CodeRabbit re-reviews new commits on its own.
 
 | Result | Meaning | Next step |
 |---|---|---|
