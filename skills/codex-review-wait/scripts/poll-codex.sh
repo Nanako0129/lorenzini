@@ -29,17 +29,26 @@ TIMEOUT=900 INTERVAL=30 PR="" REPO_ARG=""
 # seconds with no output. A gate that hangs silently is worse than one that
 # errors, because a backgrounded poll that never returns is indistinguishable
 # from one that is still waiting.
-need_value() {  # need_value <flag> -- called when the operand is absent
+# A value that begins with -- is the next option, not this one's operand.
+# `--repo --timeout 0` consumed "--timeout" as the repository and "0" as the
+# PR number, then reported `cannot read PR #0 in --timeout` -- a message about
+# a repository nobody named. Measured before fixing. Neither a repository name
+# nor a number can legitimately start with --, so rejecting the shape costs
+# nothing real.
+need_value() {  # need_value <flag> -- the operand is absent or is another option
+  # Stop the run and name the flag. Callers pass the flag they were parsing,
+  # so the operator is told which one to fix rather than that something,
+  # somewhere, was wrong.
   echo "RESULT=ERROR $1 requires a value"
   exit 2
 }
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --repo) [ "$#" -ge 2 ] || need_value --repo
+    --repo) [ "$#" -ge 2 ] && [ "${2#--}" = "$2" ] || need_value --repo
             REPO_ARG="$2"; shift 2 ;;
-    --timeout) [ "$#" -ge 2 ] || need_value --timeout
+    --timeout) [ "$#" -ge 2 ] && [ "${2#--}" = "$2" ] || need_value --timeout
                TIMEOUT="$2"; shift 2 ;;
-    --interval) [ "$#" -ge 2 ] || need_value --interval
+    --interval) [ "$#" -ge 2 ] && [ "${2#--}" = "$2" ] || need_value --interval
                 INTERVAL="$2"; shift 2 ;;
     [0-9]*)     PR="$1";              shift ;;
     *)          shift ;;

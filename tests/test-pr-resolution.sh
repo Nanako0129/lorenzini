@@ -72,7 +72,10 @@ chmod +x "$STUB_DIR/gh"
 failures=0
 checked=0
 
-fail() {  # fail <label> <want> <got> -- record one failed assertion
+fail() {  # fail <label> <want> <got>
+  # Record one failed assertion. Prints want and got on separate lines
+  # because the interesting failures here are whole command outputs, and a
+  # one-line diff of two long strings is unreadable at the moment it matters.
   printf 'FAIL %s\n  want: %s\n  got:  %s\n' "$1" "$2" "$3"
   failures=$((failures + 1))
 }
@@ -150,6 +153,27 @@ for poller in "$ROOT"/skills/*/scripts/poll-*.sh; do
   check_no_hang "$name: --repo with no operand"     "$poller" --repo
   check_no_hang "$name: --timeout with no operand"  "$poller" --timeout
   check_no_hang "$name: --interval with no operand" "$poller" --interval
+
+  # A flag followed by another flag. Checking only that a second token exists
+  # let the next option be swallowed as this one's value: `--repo --timeout 0`
+  # reported `cannot read PR #0 in --timeout`, a message about a repository
+  # nobody named. Neither a repository name nor a number can start with --.
+  check "$name: --repo followed by another option" \
+        "--repo requires a value" "$poller" --repo --timeout 0
+  check "$name: --timeout followed by another option" \
+        "--timeout requires a value" "$poller" --timeout --interval 5
+
+  # GH_REPO takes the same path as --repo: it names a repository the current
+  # branch says nothing about, so omitting the PR number must be refused the
+  # same way. Only --repo was covered before, and the two are separate
+  # branches of the same condition.
+  checked=$((checked + 1))
+  got=$(PATH="$STUB_DIR:$PATH" GH_REPO=other/repo bash "$poller" --timeout 0 --interval 1 2>&1 | head -1)
+  case "$got" in
+    *"RESULT=ERROR"*"PR number"*) : ;;
+    *) fail "$name: GH_REPO without a PR number is refused" \
+            "RESULT=ERROR ... PR number" "$got" ;;
+  esac
 
   # A failed read is not an absent pull request. An expired token exits
   # nonzero exactly like a branch with no PR, and the gate's own rule is that
