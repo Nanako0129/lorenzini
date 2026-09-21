@@ -14,6 +14,7 @@ the command composes and the role it assigns, which is all the host sees.
 """
 import asyncio
 import importlib.util
+import re
 import pathlib
 import sys
 import types
@@ -35,11 +36,21 @@ mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 
 failures = []
+checked = 0
 
 
 def ok(label, condition):
     """Record one assertion. Collects rather than raises so one broken
-    expectation does not hide the state of every assertion after it."""
+    expectation does not hide the state of every assertion after it.
+
+    The count is kept here rather than written at the bottom of the file. A
+    hand-maintained total is a second statement of what the file contains,
+    and it drifted on the first try -- the footer claimed 28 over 27 real
+    assertions, so a deleted assertion would have been reported as a passing
+    one. Counting the calls is the only version that cannot be wrong.
+    """
+    global checked
+    checked += 1
     if not condition:
         failures.append(label)
 
@@ -95,10 +106,16 @@ ok("no literal OWNER/NAME survives when a repo was given",
    "repos/OWNER/NAME" not in text)
 
 text_norepo, _ = run("12")
-ok("without --repo the lookup stays a placeholder",
-   "repos/OWNER/NAME" in text_norepo)
-ok("without --repo the agent is told where to resolve it from",
-   "working directory" in text_norepo)
+ok("without --repo the agent is told to resolve it first",
+   "resolve the repository's OWNER/NAME from the working directory"
+   in text_norepo)
+# Whatever sits between backticks is what an agent will paste into a shell.
+# The first version interpolated "OWNER/NAME, resolved from the working
+# directory" into the command position, producing a gh invocation with prose
+# in the middle of it. Every backticked span must survive on its own.
+for span in re.findall(r"`([^`]+)`", text_norepo):
+    ok(f"backticked span is a command, not prose: {span}",
+       "," not in span and " the " not in span)
 
 text_cr, _ = run("12 --repo acme/app --reviewer coderabbit")
 ok("explicit reviewer names its skill",
@@ -109,8 +126,7 @@ ok("explicit reviewer skips the star-count lookup",
 ok("every prompt carries the untrusted-data rule",
    all("untrusted data" in t for t in (text, text_norepo, text_cr)))
 
-total = 5 + 4 + 10 + 4 + 2 + 2 + 1
-print(f"{total - len(failures)} passed, {len(failures)} failed")
+print(f"{checked - len(failures)} passed, {len(failures)} failed")
 for f in failures:
     print(f"  FAIL {f}")
 sys.exit(1 if failures else 0)

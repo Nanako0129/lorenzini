@@ -131,11 +131,25 @@ async def _slash_lorenzini(ctx, args: str):
         # hands the agent a request that 404s -- and an agent reading that as
         # "cannot determine the star count" picks a reviewer by guessing,
         # which is the one thing this package exists to prevent.
-        target = repo if repo else "OWNER/NAME, resolved from the working directory"
+        #
+        # The two branches differ in sentence shape, not only in the value
+        # substituted. Interpolating "OWNER/NAME, resolved from the working
+        # directory" into the command position produced
+        # `gh api repos/OWNER/NAME, resolved from the working directory -q ...`
+        # -- prose inside a command the agent is told to run. Whatever sits
+        # between the backticks has to be executable in both branches, so the
+        # resolution step is a separate instruction when there is one.
+        if repo:
+            lookup = f"run `gh api repos/{repo} -q .stargazers_count`"
+        else:
+            lookup = (
+                "resolve the repository's OWNER/NAME from the working "
+                "directory, then run `gh api repos/OWNER/NAME -q "
+                ".stargazers_count` with that value substituted"
+            )
         pick_line = (
             "No reviewer was given, so pick one by star count before doing "
-            f"anything else: run `gh api repos/{target} -q "
-            ".stargazers_count`. Ten or more means CodeRabbit "
+            f"anything else: {lookup}. Ten or more means CodeRabbit "
             "(skills/coderabbit-review-wait/SKILL.md); under ten means "
             "Copilot (skills/copilot-review-wait/SKILL.md). Do not assume "
             "which applies -- the line is a vendor constraint and a "
