@@ -163,6 +163,31 @@ for poller in "$ROOT"/skills/*/scripts/poll-*.sh; do
   check "$name: --timeout followed by another option" \
         "--timeout requires a value" "$poller" --timeout --interval 5
 
+  # An explicitly empty operand. These are the ones that answered WRONGLY
+  # rather than failing, which is why they matter more than the three above:
+  #
+  #   --repo ""     fell through to `gh repo view` and polled the current
+  #                 directory's repository instead. A script writing
+  #                 --repo "$TARGET" with TARGET unset adjudicated the wrong
+  #                 repository and said nothing.
+  #   --timeout ""  printed "timeout s" and returned RESULT=TIMEOUT
+  #                 immediately, having waited for nothing. A verdict shaped
+  #                 exactly like an observed one, produced by observing
+  #                 nothing at all.
+  #   --interval "" span the poll loop with no delay -- five requests in
+  #                 three seconds against the GitHub API.
+  check "$name: --repo with an empty value" \
+        "--repo requires a value" "$poller" --repo ""
+  check "$name: --timeout with an empty value" \
+        "--timeout requires a value" "$poller" --timeout ""
+  check "$name: --interval with an empty value" \
+        "--interval requires a value" "$poller" --interval ""
+
+  # A non-numeric duration crashed later on an unbound variable, far from the
+  # flag that caused it. Caught where the value is still next to its flag.
+  check "$name: --timeout with a non-numeric value" \
+        "takes a whole number of seconds" "$poller" --timeout abc
+
   # GH_REPO takes the same path as --repo: it names a repository the current
   # branch says nothing about, so omitting the PR number must be refused the
   # same way. Only --repo was covered before, and the two are separate

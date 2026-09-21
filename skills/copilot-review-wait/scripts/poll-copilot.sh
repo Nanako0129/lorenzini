@@ -67,7 +67,16 @@ CBOT="Copilot"
 # a repository nobody named. Measured before fixing. Neither a repository name
 # nor a number can legitimately start with --, so rejecting the shape costs
 # nothing real.
-need_value() {  # need_value <flag> -- the operand is absent or is another option
+need_number() {  # need_number <flag> <value>
+  # A duration that is not a whole number of seconds. `--timeout ""` printed
+  # "timeout s" and returned RESULT=TIMEOUT without waiting at all -- a verdict
+  # shaped exactly like an observed one, produced by observing nothing.
+  # `--timeout abc` crashed on an unbound variable further down. Both are
+  # caught here, where the value is still next to the flag that named it.
+  echo "RESULT=ERROR $1 takes a whole number of seconds, got: $2"
+  exit 2
+}
+need_value() {  # need_value <flag> -- the operand is absent, empty, or another option
   # Stop the run and name the flag. Callers pass the flag they were parsing,
   # so the operator is told which one to fix rather than that something,
   # somewhere, was wrong.
@@ -76,11 +85,13 @@ need_value() {  # need_value <flag> -- the operand is absent or is another optio
 }
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --repo) [ "$#" -ge 2 ] && [ "${2#--}" = "$2" ] || need_value --repo
+    --repo) [ "$#" -ge 2 ] && [ -n "$2" ] && [ "${2#--}" = "$2" ] || need_value --repo
             REPO_ARG="$2"; shift 2 ;;
-    --timeout) [ "$#" -ge 2 ] && [ "${2#--}" = "$2" ] || need_value --timeout
+    --timeout) [ "$#" -ge 2 ] && [ -n "$2" ] && [ "${2#--}" = "$2" ] || need_value --timeout
+               case "$2" in ''|*[!0-9]*) need_number --timeout "$2" ;; esac
                TIMEOUT="$2"; shift 2 ;;
-    --interval) [ "$#" -ge 2 ] && [ "${2#--}" = "$2" ] || need_value --interval
+    --interval) [ "$#" -ge 2 ] && [ -n "$2" ] && [ "${2#--}" = "$2" ] || need_value --interval
+                case "$2" in ''|*[!0-9]*) need_number --interval "$2" ;; esac
                 INTERVAL="$2"; shift 2 ;;
     --request)  REQUEST=1;            shift ;;
     [0-9]*)     PR="$1";              shift ;;
