@@ -173,7 +173,7 @@ Use `run_in_background: true`. `PR_NUMBER` is optional (defaults to the current 
 > and nothing can have been passed on one.
 
 
-**Resolving the repo:** the script auto-detects the repo from the current directory — but only when that is the target git repo. Do **not** `cd` into the skill dir to run it. If your working directory is not the repo, pass **`--repo OWNER/NAME`** (or export `GH_REPO`).
+**Resolving the repo:** the script auto-detects the repo from the current directory — but only when that is the target git repo. Do **not** `cd` into the skill dir to run it. If your working directory is not the repo, pass **`--repo OWNER/NAME`** (or export `GH_REPO`). Either one also makes `PR_NUMBER` mandatory: the current branch is evidence about the repository you are standing in and about no other, so the poller refuses a repository override with no number rather than resolving a branch name against a repository it does not belong to.
 
 **Requesting manually** (what `--request` does, if you need it by hand): the `[bot]` suffix is mandatory; without it the API returns 422 *"Reviews may only be requested from collaborators"*.
 

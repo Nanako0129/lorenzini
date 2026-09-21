@@ -75,7 +75,7 @@ Use `run_in_background: true`. `PR_NUMBER` is optional (defaults to the current 
 > and nothing can have been passed on one.
 
 
-**Resolving the repo:** the script auto-detects the repo from the current directory — but only when that is the target git repo. Do **not** `cd` into the skill dir to run it (that dir is not a repo, so `gh` fails with `RESULT=ERROR cannot resolve the repo`). If your working directory is not the repo, pass **`--repo OWNER/NAME`** (or export `GH_REPO`).
+**Resolving the repo:** the script auto-detects the repo from the current directory — but only when that is the target git repo. Do **not** `cd` into the skill dir to run it (that dir is not a repo, so `gh` fails with `RESULT=ERROR cannot resolve the repo`). If your working directory is not the repo, pass **`--repo OWNER/NAME`** (or export `GH_REPO`). Either one also makes `PR_NUMBER` mandatory: the current branch is evidence about the repository you are standing in and about no other, so the poller refuses a repository override with no number rather than resolving a branch name against a repository it does not belong to.
 
 When it completes, read the output file. The last line is the verdict:
 
