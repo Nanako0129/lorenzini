@@ -19,9 +19,9 @@
 ## 審查工具與分流
 
 三支 skill 各自對應不同的審查工具：
-- [`coderabbit-review-wait`](coderabbit-review-wait/)：對應 CodeRabbit（`coderabbitai[bot]`），用於 10 顆星以上的儲存庫（包括目前 13 顆星的 `lorenzini` 本身）。
-- [`copilot-review-wait`](copilot-review-wait/)：對應 GitHub Copilot（`copilot-pull-request-reviewer[bot]`），用於少於 10 顆星的儲存庫。
-- [`codex-review-wait`](codex-review-wait/)：對應 Codex（`chatgpt-codex-connector`），因上游訂閱暫停，自 2026-09-17 起休眠。
+- [`coderabbit-review-wait`](skills/coderabbit-review-wait/)：對應 CodeRabbit（`coderabbitai[bot]`），用於 10 顆星以上的儲存庫（包括目前 13 顆星的 `lorenzini` 本身）。
+- [`copilot-review-wait`](skills/copilot-review-wait/)：對應 GitHub Copilot（`copilot-pull-request-reviewer[bot]`），用於少於 10 顆星的儲存庫。
+- [`codex-review-wait`](skills/codex-review-wait/)：對應 Codex（`chatgpt-codex-connector`），因上游訂閱暫停，自 2026-09-17 起休眠。
 
 這項分流是廠商的方案限制，不是架構偏好。CodeRabbit 的開源方案要求少於 10 顆星的公開儲存庫必須手動觸發審查，這類儲存庫才轉向 Copilot。設定前請先用指令查詢星數，不要憑空假設：
 
@@ -114,7 +114,7 @@ qwenpaw plugin uninstall lorenzini
 
 ```bash
 git clone https://github.com/Nanako0129/lorenzini.git ~/side-project/lorenzini
-cd ~/side-project/lorenzini && git checkout v0.2.1
+cd ~/side-project/lorenzini && git checkout v0.2.2
 for s in codex copilot coderabbit; do
   ln -s ~/side-project/lorenzini/skills/$s-review-wait ~/.claude/skills/$s-review-wait
 done
@@ -125,7 +125,7 @@ done
 固定在 tag，不要對齊 `main`。這些 skill 決定 PR 能否合併，而 `main` 是修補新發現 fail-open 的地方；指向 `main` 的話，隨手一次 `git pull` 就會改掉你的閘門。符號連結指的是目錄不是 commit，所以切換 tag 不會弄壞它：
 
 ```bash
-git fetch --tags && git checkout v0.2.1
+git fetch --tags && git checkout v0.2.2
 ```
 
 如果你在開發 `lorenzini` 本身，簽出的分支**就是**你當下在跑的閘門。2026-09-20 實測：同一支輪詢器在同一個 PR 上相隔幾分鐘執行，一個分支給 `RESULT=CLEAN`，另一個給 `RESULT=NOT_REVIEWED`，而那份審查內文清清楚楚寫著程式碼從未被讀過。
@@ -134,7 +134,8 @@ git fetch --tags && git checkout v0.2.1
 
 | Tag | 支援狀態 | 說明 |
 |---|---|---|
-| `v0.2.1` | 可以用 | 現行基準版本。修掉一個競態：審查正在啟動時，skip 通知會被當成終局狀態；另外把 Copilot 配額耗盡導向 CodeRabbit，而不是停在那裡。 |
+| `v0.2.2` | 可以用 | 現行基準版本。三個 skill 目錄搬進 `skills/`，並加上五份套件 manifest，讓這道閘門可以用外掛安裝，不必手工接符號連結。**破壞性變更：**既有指向這份 clone 的 `~/.claude/skills/` 符號連結，升級後會懸空。 |
+| `v0.2.1` | 已被取代 | 前一個基準版本。修掉一個競態：審查正在啟動時，skip 通知會被當成終局狀態；另外把 Copilot 配額耗盡導向 CodeRabbit，而不是停在那裡。 |
 | `v0.2.0` | 已被取代 | 有跨審查工具、非審查狀態與格式辨識三道防護，但會在第一次看到 skip 通知時就當成終局。在 CodeRabbit auto review 關閉的 repo 上，這每一輪都會觸發。 |
 | `v0.1.1` | 已被取代 | 缺少 cross-reviewer、non-review 與格式辨識三道防護。 |
 | `v0.1.0` | 不要用 | 內含 4 道會在未掙得通過時誤報通過的缺陷閘門。 |
@@ -173,12 +174,12 @@ Jev 提供四種刻意區隔的輸出訊號：
 
 把前三種輸出摺疊成同一種沉默，就是帳本大部分在講的那種錯誤。`INCOMPLETE` 狀態之所以存在，正是因為這支分類器腳本的第一版就犯過這個錯：部分 API 回應產生了空的旗標清單，程式隨後回報什麼都沒漏。
 
-評測準則檔案本身就是分類器。提示詞定義於 `coderabbit-review-wait/jev-questions-v3.json` 而非寫死在腳本中，因為改動任何一個詞都會改變模型的分數判斷。在 gold set 標籤中，`L01` 代表「🧹 Nitpick comments (3)」，正確標註為 findings。在 `v1` 中，分類器給出 0.37 分（低於 0.50 門檻）而漏抓，純粹是因為準則中缺少 "nitpick" 這個字；在 `v2` 明確點名後，同一個標題的分數提升至 0.697。因此每次呼叫都會記錄題目集的雜湊值，題目變體也直接反映在檔名上。
+評測準則檔案本身就是分類器。提示詞定義於 `skills/coderabbit-review-wait/jev-questions-v3.json` 而非寫死在腳本中，因為改動任何一個詞都會改變模型的分數判斷。在 gold set 標籤中，`L01` 代表「🧹 Nitpick comments (3)」，正確標註為 findings。在 `v1` 中，分類器給出 0.37 分（低於 0.50 門檻）而漏抓，純粹是因為準則中缺少 "nitpick" 這個字；在 `v2` 明確點名後，同一個標題的分數提升至 0.697。因此每次呼叫都會記錄題目集的雜湊值，題目變體也直接反映在檔名上。
 
 若要評測修改後的題目檔，請執行：
 
 ```bash
-python3 tests/run-gold-set.py 3 coderabbit-review-wait/jev-questions-v4.json
+python3 tests/run-gold-set.py 3 skills/coderabbit-review-wait/jev-questions-v4.json
 ```
 
 以 `tests/fixtures/` 中的 30 筆標籤為基準，各版本重複執行 3 次的實測資料如下：

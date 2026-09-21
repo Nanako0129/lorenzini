@@ -72,6 +72,13 @@ async def _slash_lorenzini(ctx, args: str):
     from agentscope.message import Msg, TextBlock
 
     def reply(text: str, role: str = "assistant"):
+        """Wrap ``text`` in a single-block Msg from this command.
+
+        ``role`` is the lever: "assistant" speaks to the person (usage,
+        errors) and stops there, while "user" hands the text to the host
+        agent as a prompt it must act on. Getting it wrong turns the
+        instruction to run the gate into a message about running it.
+        """
         return Msg(
             name="lorenzini",
             role=role,
@@ -150,6 +157,15 @@ class LorenziniPlugin:
     """Installs the packaged lorenzini skills into every QwenPaw workspace."""
 
     def register(self, api) -> None:
+        """Register the skill provider and the ``/lorenzini`` command.
+
+        ``skills_dir`` is the ``skills`` symlink beside this file, pointing at
+        the repository's canonical ``skills/``; the packaged copy is therefore
+        the same bytes every other install route gets, not a fork that drifts.
+        Skills are enabled by default on every channel because a review gate
+        that has to be switched on per workspace is one that will be off on
+        the workspace where it mattered.
+        """
         skills_dir = PLUGIN_DIR / "skills"
         api.register_skill_provider(
             skills_dir=skills_dir,

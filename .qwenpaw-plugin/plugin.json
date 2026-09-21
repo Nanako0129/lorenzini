@@ -1,7 +1,7 @@
 {
   "id": "lorenzini",
   "name": "lorenzini",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "general",
   "description": "Wait for a third-party PR reviewer and adjudicate whether its verdict actually means pass: three skills (coderabbit-review-wait, copilot-review-wait, codex-review-wait) and a /lorenzini slash command.",
   "description_i18n": {

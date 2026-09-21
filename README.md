@@ -19,9 +19,9 @@ The record of every missed finding lives in [`docs/fail-open-ledger.md`](docs/fa
 ## Reviewer skills and routing
 
 Routing is split across three skills:
-- [`coderabbit-review-wait`](coderabbit-review-wait/): CodeRabbit (`coderabbitai[bot]`), for repositories with 10 or more stars (including `lorenzini` itself at 13 stars).
-- [`copilot-review-wait`](copilot-review-wait/): GitHub Copilot (`copilot-pull-request-reviewer[bot]`), for repositories under 10 stars.
-- [`codex-review-wait`](codex-review-wait/): Codex (`chatgpt-codex-connector`), dormant since 2026-09-17 following an upstream subscription suspension.
+- [`coderabbit-review-wait`](skills/coderabbit-review-wait/): CodeRabbit (`coderabbitai[bot]`), for repositories with 10 or more stars (including `lorenzini` itself at 13 stars).
+- [`copilot-review-wait`](skills/copilot-review-wait/): GitHub Copilot (`copilot-pull-request-reviewer[bot]`), for repositories under 10 stars.
+- [`codex-review-wait`](skills/codex-review-wait/): Codex (`chatgpt-codex-connector`), dormant since 2026-09-17 following an upstream subscription suspension.
 
 This division is a vendor constraint, not an architectural choice. CodeRabbit's open-source plan requires manual review triggers on public repositories with fewer than 10 stars, so those repositories route to Copilot. Query star counts with the GitHub CLI before configuring:
 
@@ -114,7 +114,7 @@ The manual route, and the one to use if you want the gate to change only when yo
 
 ```bash
 git clone https://github.com/Nanako0129/lorenzini.git ~/side-project/lorenzini
-cd ~/side-project/lorenzini && git checkout v0.2.1
+cd ~/side-project/lorenzini && git checkout v0.2.2
 for s in codex copilot coderabbit; do
   ln -s ~/side-project/lorenzini/skills/$s-review-wait ~/.claude/skills/$s-review-wait
 done
@@ -125,7 +125,7 @@ done
 Pin to a tag, never to `main`. These skills govern merge safety and `main` is where each newly caught fail-open is patched, so on `main` an ordinary `git pull` changes your gate. Symlinks target directories rather than commits, so they survive:
 
 ```bash
-git fetch --tags && git checkout v0.2.1
+git fetch --tags && git checkout v0.2.2
 ```
 
 If you develop inside `lorenzini`, your checked-out branch **is** your active gate. On 2026-09-20, the same poller on the same pull request minutes apart produced `RESULT=CLEAN` from one branch and `RESULT=NOT_REVIEWED` from another — over a review body stating the source files were never read.
@@ -134,7 +134,8 @@ If you develop inside `lorenzini`, your checked-out branch **is** your active ga
 
 | Tag | Status | Notes |
 |---|---|---|
-| `v0.2.1` | Usable | Current baseline. Fixes a race where a skip notice was read as terminal while the review was starting, and routes a spent Copilot quota to CodeRabbit instead of stopping. |
+| `v0.2.2` | Usable | Current baseline. Moves the three skill directories into `skills/` and adds five package manifests, so the gate installs as a plugin rather than a hand-made symlink. **Breaking:** an existing `~/.claude/skills/` symlink into this clone goes dangling on upgrade. |
+| `v0.2.1` | Superseded | Previous baseline. Fixes a race where a skip notice was read as terminal while the review was starting, and routes a spent Copilot quota to CodeRabbit instead of stopping. |
 | `v0.2.0` | Superseded | Has the cross-reviewer, non-review and format recognition guards, but treats a skip notice as terminal on first sight. On a repository with CodeRabbit auto review disabled, that fires every round. |
 | `v0.1.1` | Superseded | Lacks cross-reviewer guards, non-review detection, and updated format recognition. |
 | `v0.1.0` | Do not use | Contains four distinct gates that report passes without earning them. |
@@ -173,12 +174,12 @@ Jev produces four distinct outputs, kept deliberately distinguishable:
 
 Collapsing the first three outputs into the same silence is the exact failure documented across most of the ledger. The `INCOMPLETE` state exists because the very first version of this classifier script made that exact error: partial API responses generated an empty flags list, which the script reported as "nothing missed."
 
-The criteria file *is* the classifier. Prompts live in `coderabbit-review-wait/jev-questions-v3.json` rather than inline code because altering a single word shifts scoring behavior. In gold set benchmarks, label `L01` ("🧹 Nitpick comments (3)") represents legitimate findings. In `v1`, the classifier scored it 0.37 (falling below the 0.50 threshold) simply because the word "nitpick" was absent from the prompt criteria. Explicitly naming "nitpick" in `v2` raised that same heading's score to 0.697. Every execution records a SHA hash of the question set, and prompt iterations are tracked in filenames rather than guessed.
+The criteria file *is* the classifier. Prompts live in `skills/coderabbit-review-wait/jev-questions-v3.json` rather than inline code because altering a single word shifts scoring behavior. In gold set benchmarks, label `L01` ("🧹 Nitpick comments (3)") represents legitimate findings. In `v1`, the classifier scored it 0.37 (falling below the 0.50 threshold) simply because the word "nitpick" was absent from the prompt criteria. Explicitly naming "nitpick" in `v2` raised that same heading's score to 0.697. Every execution records a SHA hash of the question set, and prompt iterations are tracked in filenames rather than guessed.
 
 To evaluate prompt modifications against the fixture baseline:
 
 ```bash
-python3 tests/run-gold-set.py 3 coderabbit-review-wait/jev-questions-v4.json
+python3 tests/run-gold-set.py 3 skills/coderabbit-review-wait/jev-questions-v4.json
 ```
 
 Benchmarks run across 30 labels in `tests/fixtures/`, evaluated three times per release:
