@@ -1,6 +1,6 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "lorenzini",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Three Claude Code skills that wait for a third-party pull-request reviewer and adjudicate whether its verdict actually means pass. They do not review code; they decide what the reviewer said about it."
 }

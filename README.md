@@ -126,7 +126,7 @@ The manual route, and the one to use if you want the gate to change only when yo
 
 ```bash
 git clone https://github.com/Nanako0129/lorenzini.git ~/side-project/lorenzini
-cd ~/side-project/lorenzini && git checkout v0.2.2
+cd ~/side-project/lorenzini && git checkout v0.2.3
 for s in codex copilot coderabbit; do
   ln -sfn ~/side-project/lorenzini/skills/$s-review-wait ~/.claude/skills/$s-review-wait
 done
@@ -137,7 +137,7 @@ done
 Pin to a tag, never to `main`. These skills govern merge safety and `main` is where each newly caught fail-open is patched, so on `main` an ordinary `git pull` changes your gate. Symlinks target directories rather than commits, so they survive:
 
 ```bash
-git fetch --tags && git checkout v0.2.2
+git fetch --tags && git checkout v0.2.3
 ```
 
 If you develop inside `lorenzini`, your checked-out branch **is** your active gate. On 2026-09-20, the same poller on the same pull request minutes apart produced `RESULT=CLEAN` from one branch and `RESULT=NOT_REVIEWED` from another — over a review body stating the source files were never read.
@@ -146,7 +146,8 @@ If you develop inside `lorenzini`, your checked-out branch **is** your active ga
 
 | Tag | Status | Notes |
 |---|---|---|
-| `v0.2.2` | Usable | Current baseline. Moves the three skill directories into `skills/` and adds five package manifests, so the gate installs as a plugin rather than a hand-made symlink. **Breaking:** an existing `~/.claude/skills/` symlink into this clone goes dangling on upgrade. |
+| `v0.2.3` | Usable | Current baseline. Makes the documented current-branch PR fallback actually resolve — it could never succeed, and reported `no PR for the current branch` on branches that had one. Hardens the argument parser: a flag with no value hung the poller silently, an empty `--repo` polled the wrong repository, and an empty `--timeout` returned `RESULT=TIMEOUT` without waiting. |
+| `v0.2.2` | Superseded | Previous baseline. Moves the three skill directories into `skills/` and adds five package manifests, so the gate installs as a plugin rather than a hand-made symlink. **Breaking:** an existing `~/.claude/skills/` symlink into this clone goes dangling on upgrade. |
 | `v0.2.1` | Superseded | Previous baseline. Fixes a race where a skip notice was read as terminal while the review was starting, and routes a spent Copilot quota to CodeRabbit instead of stopping. |
 | `v0.2.0` | Superseded | Has the cross-reviewer, non-review and format recognition guards, but treats a skip notice as terminal on first sight. On a repository with CodeRabbit auto review disabled, that fires every round. |
 | `v0.1.1` | Superseded | Lacks cross-reviewer guards, non-review detection, and updated format recognition. |
