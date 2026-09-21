@@ -484,11 +484,45 @@ classify_bodies() {
 (return 0 2>/dev/null) && return 0
 
 TIMEOUT=900 INTERVAL=20 PR="" REPO_ARG="" REQUEST=0
+# A flag whose value is missing must stop the run, not be defaulted. `shift 2`
+# with one argument left FAILS and shifts NOTHING -- these scripts set -u but
+# not -e, so the loop reselects the same flag and spins forever, printing
+# nothing. Measured: `poll-coderabbit.sh --repo` was still running after five
+# seconds with no output. A gate that hangs silently is worse than one that
+# errors, because a backgrounded poll that never returns is indistinguishable
+# from one that is still waiting.
+# A value that begins with -- is the next option, not this one's operand.
+# `--repo --timeout 0` consumed "--timeout" as the repository and "0" as the
+# PR number, then reported `cannot read PR #0 in --timeout` -- a message about
+# a repository nobody named. Measured before fixing. Neither a repository name
+# nor a number can legitimately start with --, so rejecting the shape costs
+# nothing real.
+need_number() {  # need_number <flag> <value>
+  # A duration that is not a whole number of seconds. `--timeout ""` printed
+  # "timeout s" and returned RESULT=TIMEOUT without waiting at all -- a verdict
+  # shaped exactly like an observed one, produced by observing nothing.
+  # `--timeout abc` crashed on an unbound variable further down. Both are
+  # caught here, where the value is still next to the flag that named it.
+  echo "RESULT=ERROR $1 takes a whole number of seconds, got: $2"
+  exit 2
+}
+need_value() {  # need_value <flag> -- the operand is absent, empty, or another option
+  # Stop the run and name the flag. Callers pass the flag they were parsing,
+  # so the operator is told which one to fix rather than that something,
+  # somewhere, was wrong.
+  echo "RESULT=ERROR $1 requires a value"
+  exit 2
+}
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --repo)     REPO_ARG="${2:-}";    shift 2 ;;
-    --timeout)  TIMEOUT="${2:-900}";  shift 2 ;;
-    --interval) INTERVAL="${2:-20}";  shift 2 ;;
+    --repo) [ "$#" -ge 2 ] && [ -n "$2" ] && [ "${2#--}" = "$2" ] || need_value --repo
+            REPO_ARG="$2"; shift 2 ;;
+    --timeout) [ "$#" -ge 2 ] && [ -n "$2" ] && [ "${2#--}" = "$2" ] || need_value --timeout
+               case "$2" in ''|*[!0-9]*) need_number --timeout "$2" ;; esac
+               TIMEOUT="$2"; shift 2 ;;
+    --interval) [ "$#" -ge 2 ] && [ -n "$2" ] && [ "${2#--}" = "$2" ] || need_value --interval
+                case "$2" in ''|*[!0-9]*) need_number --interval "$2" ;; esac
+                INTERVAL="$2"; shift 2 ;;
     --request)  REQUEST=1;            shift ;;
     [0-9]*)     PR="$1";              shift ;;
     *)          shift ;;
@@ -505,8 +539,44 @@ else
   REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null) \
     || { echo "RESULT=ERROR cannot resolve the repo -- run from the target git repo, or pass --repo OWNER/NAME (or set GH_REPO)"; exit 2; }
 fi
-[ -n "$PR" ] || PR=$(gh pr view --repo "$REPO" --json number --jq .number 2>/dev/null) \
-  || { echo "RESULT=ERROR no PR for the current branch"; exit 2; }
+if [ -z "$PR" ]; then
+  # `gh pr view` refuses to run without a selector when --repo is given --
+  # measured: "argument required when using the --repo flag". $REPO always has
+  # a value by this point, so passing it made this fallback unreachable on
+  # every branch, while the error below claimed the branch had no PR. It said
+  # that on branches that had one, which is the worse half: someone debugging
+  # it checks their branch and their PR, finds both correct, and has no reason
+  # to suspect the call.
+  #
+  # The current branch is evidence about the repository the shell is standing
+  # in and about no other. When the repository was named explicitly there is
+  # nothing to fall back to, so say that rather than resolving a branch name
+  # against a repository it does not belong to.
+  if [ -n "$REPO_ARG" ] || [ -n "${GH_REPO:-}" ]; then
+    echo "RESULT=ERROR a PR number is required when the repo is named with --repo or GH_REPO -- the current branch is not evidence about another repository"
+    exit 2
+  fi
+  # Do NOT suppress gh's stderr and then assert what the failure meant. An
+  # expired token, an unreachable network and a directory that is not a git
+  # repository all exit nonzero exactly like a branch with no pull request,
+  # and this gate's own rule is that a read which errored is not a count of
+  # zero. The previous line here claimed "no PR for the current branch" for
+  # every one of them -- the same false claim this commit set out to remove,
+  # rewritten one line further down.
+  #
+  # So do not classify at all: relay what gh said. Its own message already
+  # distinguishes the cases ("no pull requests found for branch X" versus an
+  # authentication error), and relaying it cannot be wrong about something
+  # that was never observed here.
+  pr_err=$(mktemp 2>/dev/null) || { echo "RESULT=ERROR cannot create a temporary file"; exit 2; }
+  PR=$(gh pr view --json number --jq .number 2>"$pr_err")
+  if [ -z "$PR" ]; then
+    echo "RESULT=ERROR could not resolve the current branch's PR -- pass a PR number. gh said: $(tr '\n' ' ' <"$pr_err")"
+    rm -f "$pr_err"
+    exit 2
+  fi
+  rm -f "$pr_err"
+fi
 HEAD=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid 2>/dev/null) \
   || { echo "RESULT=ERROR cannot read PR #$PR in $REPO"; exit 2; }
 if [ "$(gh pr view "$PR" --repo "$REPO" --json isDraft --jq .isDraft 2>/dev/null)" = "true" ]; then

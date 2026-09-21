@@ -173,17 +173,34 @@ bash <skill-dir>/scripts/poll-coderabbit.sh [PR_NUMBER] [--repo OWNER/NAME] [--t
 ```
 
 > **If that command fails with `No such file or directory` and exit 127**, the
-> skill directory this file was loaded from does not contain the script. The
-> usual cause is a stale symlink: the three skill directories moved from the
-> repository root into `skills/` in v0.2.2, so a `~/.claude/skills/` symlink
-> created before that points at a path which no longer exists. A dangling skill
-> symlink does not announce itself — `ls` still lists the name and the skill
-> still appears in the loaded set, because the link itself is intact. Re-create
-> it against `skills/<name>` (see the repository README) or reinstall the
-> package. It fails closed: the script never ran, so no verdict was produced and
-> nothing can have been passed on one.
+> path you ran is not where this file was loaded from. `<skill-dir>` means the
+> directory holding *this* `SKILL.md`, whatever that is on your machine — it is
+> not a fixed location, and substituting a remembered one is the most common
+> way to reach 127.
+>
+> Two causes, and the second is now the likelier of the two:
+>
+> - **A stale symlink.** The three skill directories moved from the repository
+>   root into `skills/` in v0.2.2, so a `~/.claude/skills/` symlink created
+>   before that points at a path which no longer exists. A dangling skill
+>   symlink does not announce itself: `ls` still lists the name and the skill
+>   still appears in the loaded set, because the link itself is intact.
+> - **The skill now loads from a package install.** When the package is
+>   installed by any of the routes in the README, the symlink under
+>   `~/.claude/skills/` is meant to be removed — one skill, one source. The
+>   skill keeps loading and `<skill-dir>` keeps resolving, from the package's
+>   own directory. A command that hardcodes `~/.claude/skills/<name>/scripts/`
+>   then points at a directory that no longer exists, while everything else
+>   about the skill works.
+>
+> If you were told to re-create the symlink, check first whether the package is
+> installed. Doing both gives one skill two sources, which is the condition this
+> repository's ledger is about.
+>
+> It fails closed either way: the script never ran, so no verdict was produced
+> and nothing can have been passed on one.
 
-Use `run_in_background: true`. Keep the working directory in the target repo, or pass `--repo`. `--request` posts `@coderabbitai review`; it is **not** needed after a push, since CodeRabbit re-reviews new commits on its own.
+Use `run_in_background: true`. Keep the working directory in the target repo, or pass `--repo`. Omitting `PR_NUMBER` resolves the current branch's PR, and that only works from inside the target repository: `--repo` (or `GH_REPO`) names a repository the current branch says nothing about, so the two cannot be combined and passing `--repo` without a number is refused. `--request` posts `@coderabbitai review`; it is **not** needed after a push, since CodeRabbit re-reviews new commits on its own.
 
 | Result | Meaning | Next step |
 |---|---|---|

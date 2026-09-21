@@ -142,21 +142,38 @@ Run the poller in the **background** (so you are not blocked; you get notified w
 bash <skill-dir>/scripts/poll-copilot.sh [PR_NUMBER] [--repo OWNER/NAME] [--timeout 900] [--interval 20] [--request]
 ```
 
-Use `run_in_background: true`. `PR_NUMBER` is optional (defaults to the current branch's PR).
+Use `run_in_background: true`. `PR_NUMBER` is optional (defaults to the current branch's PR). Omitting `PR_NUMBER` resolves the current branch's PR, and that only works from inside the target repository: `--repo` (or `GH_REPO`) names a repository the current branch says nothing about, so the two cannot be combined and passing `--repo` without a number is refused.
 
 > **If that command fails with `No such file or directory` and exit 127**, the
-> skill directory this file was loaded from does not contain the script. The
-> usual cause is a stale symlink: the three skill directories moved from the
-> repository root into `skills/` in v0.2.2, so a `~/.claude/skills/` symlink
-> created before that points at a path which no longer exists. A dangling skill
-> symlink does not announce itself — `ls` still lists the name and the skill
-> still appears in the loaded set, because the link itself is intact. Re-create
-> it against `skills/<name>` (see the repository README) or reinstall the
-> package. It fails closed: the script never ran, so no verdict was produced and
-> nothing can have been passed on one.
+> path you ran is not where this file was loaded from. `<skill-dir>` means the
+> directory holding *this* `SKILL.md`, whatever that is on your machine — it is
+> not a fixed location, and substituting a remembered one is the most common
+> way to reach 127.
+>
+> Two causes, and the second is now the likelier of the two:
+>
+> - **A stale symlink.** The three skill directories moved from the repository
+>   root into `skills/` in v0.2.2, so a `~/.claude/skills/` symlink created
+>   before that points at a path which no longer exists. A dangling skill
+>   symlink does not announce itself: `ls` still lists the name and the skill
+>   still appears in the loaded set, because the link itself is intact.
+> - **The skill now loads from a package install.** When the package is
+>   installed by any of the routes in the README, the symlink under
+>   `~/.claude/skills/` is meant to be removed — one skill, one source. The
+>   skill keeps loading and `<skill-dir>` keeps resolving, from the package's
+>   own directory. A command that hardcodes `~/.claude/skills/<name>/scripts/`
+>   then points at a directory that no longer exists, while everything else
+>   about the skill works.
+>
+> If you were told to re-create the symlink, check first whether the package is
+> installed. Doing both gives one skill two sources, which is the condition this
+> repository's ledger is about.
+>
+> It fails closed either way: the script never ran, so no verdict was produced
+> and nothing can have been passed on one.
 
 
-**Resolving the repo:** the script auto-detects the repo from the current directory — but only when that is the target git repo. Do **not** `cd` into the skill dir to run it. If your working directory is not the repo, pass **`--repo OWNER/NAME`** (or export `GH_REPO`).
+**Resolving the repo:** the script auto-detects the repo from the current directory — but only when that is the target git repo. Do **not** `cd` into the skill dir to run it. If your working directory is not the repo, pass **`--repo OWNER/NAME`** (or export `GH_REPO`). Either one also makes `PR_NUMBER` mandatory: the current branch is evidence about the repository you are standing in and about no other, so the poller refuses a repository override with no number rather than resolving a branch name against a repository it does not belong to.
 
 **Requesting manually** (what `--request` does, if you need it by hand): the `[bot]` suffix is mandatory; without it the API returns 422 *"Reviews may only be requested from collaborators"*.
 
