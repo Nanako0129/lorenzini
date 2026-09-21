@@ -96,8 +96,10 @@ async def _slash_lorenzini(ctx, args: str):
     if not pr:
         return reply(USAGE)
     # ASCII digits only. str.isdigit() is Unicode-aware and returns True for
-    # fullwidth forms such as "１２", which then take this path: the composed
-    # prompt names PR １２, the poller's argument parser matches positional PR
+    # fullwidth forms (U+FF10 to U+FF19) and for other decimal scripts such as
+    # Arabic-Indic (U+0660 to U+0669). Those take this path: the composed
+    # prompt names the PR in whichever digits were typed, the poller's
+    # argument parser matches positional PR
     # numbers with the shell pattern [0-9]*, fullwidth digits do not match it,
     # its *) branch shifts the value away without an error, PR stays empty,
     # and poll-coderabbit.sh:508 falls back to resolving the pull request from

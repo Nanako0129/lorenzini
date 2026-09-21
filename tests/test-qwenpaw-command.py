@@ -84,8 +84,18 @@ ok("non-numeric PR rejected", "is not a pull request number" in run("abc")[0])
 # prompt. The poller's [0-9]* case pattern then drops them through its *)
 # branch without an error and falls back to the current branch's pull request,
 # so the gate would have adjudicated a different PR than it was asked about.
-for wide in ("１２", "١٢", "١2"):
-    ok(f"non-ASCII digits rejected: {wide}",
+# Written as escapes, not as the characters themselves. The whole subject
+# here is that these are indistinguishable from ASCII digits when read, so a
+# literal would leave the next reader unable to tell what is actually being
+# tested -- and unable to notice if an editor or an encoding round-trip
+# quietly replaced one with its ASCII lookalike.
+WIDE = "\uff11\uff12"        # FULLWIDTH DIGIT ONE, TWO
+ARABIC = "\u0661\u0662"      # ARABIC-INDIC DIGIT ONE, TWO
+MIXED = "\u0661" + "2"        # one of each: a check that only rejects
+#                                fully non-ASCII input would pass this
+for name, wide in (("fullwidth", WIDE), ("arabic-indic", ARABIC),
+                   ("mixed", MIXED)):
+    ok(f"non-ASCII digits rejected: {name}",
        "is not a pull request number" in run(wide)[0])
 ok("unknown reviewer rejected",
    "Unknown --reviewer" in run("12 --reviewer gemini")[0])
