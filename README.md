@@ -116,7 +116,7 @@ The manual route, and the one to use if you want the gate to change only when yo
 git clone https://github.com/Nanako0129/lorenzini.git ~/side-project/lorenzini
 cd ~/side-project/lorenzini && git checkout v0.2.2
 for s in codex copilot coderabbit; do
-  ln -s ~/side-project/lorenzini/skills/$s-review-wait ~/.claude/skills/$s-review-wait
+  ln -sfn ~/side-project/lorenzini/skills/$s-review-wait ~/.claude/skills/$s-review-wait
 done
 ```
 

@@ -41,6 +41,13 @@ USAGE = (
 # number inside free text cannot be mistaken for command control data.
 _FLAG = re.compile(r"\s*--(repo|reviewer)\s+(\S+)\s*$")
 
+# A --repo value is interpolated into a prompt that instructs the host agent to
+# run `gh api repos/<value>`. That is a trust boundary: \S+ alone admits
+# backticks, $(...) and shell metacharacters into a string the agent may paste
+# into a command. GitHub owner and repository names are drawn from this set, so
+# rejecting everything else costs nothing real and closes the seam.
+_REPO = re.compile(r"\A[A-Za-z0-9._-]+/[A-Za-z0-9._-]+\Z")
+
 
 def _split_flags(raw: str) -> tuple[str, dict[str, str]]:
     """Split ``raw`` into (leading text, flags), peeling flags off the tail.
@@ -101,6 +108,12 @@ async def _slash_lorenzini(ctx, args: str):
         )
 
     repo = flags.get("repo")
+    if repo is not None and not _REPO.match(repo):
+        return reply(
+            f"'{repo}' is not an OWNER/NAME repository. Expected two "
+            f"segments of letters, digits, dot, dash or underscore."
+        )
+
     repo_line = (
         f"Repository: {repo}."
         if repo
@@ -113,9 +126,15 @@ async def _slash_lorenzini(ctx, args: str):
             f"skills/{SKILLS[reviewer]}/SKILL.md."
         )
     else:
+        # The lookup has to name the repository the command was given. Leaving
+        # the literal OWNER/NAME here while repo_line above says `acme/app`
+        # hands the agent a request that 404s -- and an agent reading that as
+        # "cannot determine the star count" picks a reviewer by guessing,
+        # which is the one thing this package exists to prevent.
+        target = repo if repo else "OWNER/NAME, resolved from the working directory"
         pick_line = (
             "No reviewer was given, so pick one by star count before doing "
-            "anything else: run `gh api repos/OWNER/NAME -q "
+            f"anything else: run `gh api repos/{target} -q "
             ".stargazers_count`. Ten or more means CodeRabbit "
             "(skills/coderabbit-review-wait/SKILL.md); under ten means "
             "Copilot (skills/copilot-review-wait/SKILL.md). Do not assume "
