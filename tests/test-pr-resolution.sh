@@ -31,6 +31,13 @@ trap 'rm -rf "$STUB_DIR"' EXIT
 cat >"$STUB_DIR/gh" <<'STUB'
 #!/bin/bash
 BRANCH_PR=85
+# GH_STUB_FAIL simulates a gh that cannot answer at all -- an expired token,
+# not an absent PR. It exits nonzero by the same route a real absence does,
+# which is the whole point: the poller must not decide which one it was.
+if [ -n "${GH_STUB_FAIL:-}" ] && [ "$1" = "pr" ]; then
+  echo "error: not authenticated. run: gh auth login" >&2
+  exit 1
+fi
 if [ "$1" = "repo" ] && [ "$2" = "view" ]; then echo "acme/app"; exit 0; fi
 if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
   shift 2
@@ -65,19 +72,51 @@ chmod +x "$STUB_DIR/gh"
 failures=0
 checked=0
 
+fail() {  # fail <label> <want> <got> -- record one failed assertion
+  printf 'FAIL %s\n  want: %s\n  got:  %s\n' "$1" "$2" "$3"
+  failures=$((failures + 1))
+}
+
 check() {  # check <label> <expected-substring> <poller> [args...]
-  local label="$1" want="$2" poller="$3"; shift 3
-  checked=$((checked + 1))
-  local got
+  # Run one poller under the stub and assert its first line contains <want>.
   # --timeout 0 makes the loop hit its deadline immediately, so the run ends
   # after the resolution step instead of polling a repository that does not
   # exist. The first line is what carries the resolved PR number.
+  local label="$1" want="$2" poller="$3"; shift 3
+  checked=$((checked + 1))
+  local got
   got=$(PATH="$STUB_DIR:$PATH" bash "$poller" "$@" --timeout 0 --interval 1 2>&1 | head -1)
-  if [[ "$got" == *"$want"* ]]; then
-    return 0
+  [[ "$got" == *"$want"* ]] || fail "$label" "substring: $want" "$got"
+}
+
+check_no_hang() {  # check_no_hang <label> <poller> [args...]
+  # Assert the poller terminates and says why, rather than spinning.
+  #
+  # `shift 2` with one argument left fails and shifts nothing. With set -u and
+  # no set -e the loop reselects the same flag forever, printing nothing --
+  # measured before the fix: `poll-coderabbit.sh --repo` was alive after five
+  # seconds with empty output. A test that only checked the message would pass
+  # against a build that hangs, because a hang produces no wrong message. So
+  # termination is asserted first, on its own.
+  local label="$1" poller="$2"; shift 2
+  checked=$((checked + 1))
+  local out; out=$(mktemp)
+  PATH="$STUB_DIR:$PATH" bash "$poller" "$@" >"$out" 2>&1 &
+  local pid=$!
+  local i
+  for i in 1 2 3; do
+    sleep 1
+    kill -0 "$pid" 2>/dev/null || break
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -9 "$pid" 2>/dev/null
+    wait "$pid" 2>/dev/null
+    fail "$label" "terminates" "still running after 3s, output: $(head -1 "$out")"
+    rm -f "$out"; return
   fi
-  printf 'FAIL %s\n  want substring: %s\n  got:            %s\n' "$label" "$want" "$got"
-  failures=$((failures + 1))
+  wait "$pid" 2>/dev/null
+  local got; got=$(head -1 "$out"); rm -f "$out"
+  [[ "$got" == *"requires a value"* ]] || fail "$label" "substring: requires a value" "$got"
 }
 
 for poller in "$ROOT"/skills/*/scripts/poll-*.sh; do
@@ -104,6 +143,24 @@ for poller in "$ROOT"/skills/*/scripts/poll-*.sh; do
       esac ;;
     *) printf 'FAIL %s: --repo without a PR number should error, got: %s\n' "$name" "$got"
        failures=$((failures + 1)) ;;
+  esac
+
+  # A flag given without its operand. Every one of these spun forever before
+  # the fix, with no output at all.
+  check_no_hang "$name: --repo with no operand"     "$poller" --repo
+  check_no_hang "$name: --timeout with no operand"  "$poller" --timeout
+  check_no_hang "$name: --interval with no operand" "$poller" --interval
+
+  # A failed read is not an absent pull request. An expired token exits
+  # nonzero exactly like a branch with no PR, and the gate's own rule is that
+  # a read which errored is not a count of zero. The poller must relay what gh
+  # said rather than assert which of the two it was.
+  checked=$((checked + 1))
+  got=$(PATH="$STUB_DIR:$PATH" GH_STUB_FAIL=1 bash "$poller" --timeout 0 --interval 1 2>&1 | head -1)
+  case "$got" in
+    *"gh auth login"*) : ;;   # gh's own words survived to the operator
+    *) fail "$name: a gh failure is relayed, not classified" \
+            "substring: gh auth login" "$got" ;;
   esac
 done
 

@@ -22,11 +22,25 @@
 set -u
 
 TIMEOUT=900 INTERVAL=30 PR="" REPO_ARG=""
+# A flag whose value is missing must stop the run, not be defaulted. `shift 2`
+# with one argument left FAILS and shifts NOTHING -- these scripts set -u but
+# not -e, so the loop reselects the same flag and spins forever, printing
+# nothing. Measured: `poll-coderabbit.sh --repo` was still running after five
+# seconds with no output. A gate that hangs silently is worse than one that
+# errors, because a backgrounded poll that never returns is indistinguishable
+# from one that is still waiting.
+need_value() {  # need_value <flag> -- called when the operand is absent
+  echo "RESULT=ERROR $1 requires a value"
+  exit 2
+}
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --repo)     REPO_ARG="${2:-}";    shift 2 ;;
-    --timeout)  TIMEOUT="${2:-900}";  shift 2 ;;
-    --interval) INTERVAL="${2:-30}";  shift 2 ;;
+    --repo) [ "$#" -ge 2 ] || need_value --repo
+            REPO_ARG="$2"; shift 2 ;;
+    --timeout) [ "$#" -ge 2 ] || need_value --timeout
+               TIMEOUT="$2"; shift 2 ;;
+    --interval) [ "$#" -ge 2 ] || need_value --interval
+                INTERVAL="$2"; shift 2 ;;
     [0-9]*)     PR="$1";              shift ;;
     *)          shift ;;
   esac
@@ -63,8 +77,26 @@ if [ -z "$PR" ]; then
     echo "RESULT=ERROR a PR number is required when the repo is named with --repo or GH_REPO -- the current branch is not evidence about another repository"
     exit 2
   fi
-  PR=$(gh pr view --json number --jq .number 2>/dev/null) \
-    || { echo "RESULT=ERROR no PR for the current branch -- pass a PR number"; exit 2; }
+  # Do NOT suppress gh's stderr and then assert what the failure meant. An
+  # expired token, an unreachable network and a directory that is not a git
+  # repository all exit nonzero exactly like a branch with no pull request,
+  # and this gate's own rule is that a read which errored is not a count of
+  # zero. The previous line here claimed "no PR for the current branch" for
+  # every one of them -- the same false claim this commit set out to remove,
+  # rewritten one line further down.
+  #
+  # So do not classify at all: relay what gh said. Its own message already
+  # distinguishes the cases ("no pull requests found for branch X" versus an
+  # authentication error), and relaying it cannot be wrong about something
+  # that was never observed here.
+  pr_err=$(mktemp 2>/dev/null) || { echo "RESULT=ERROR cannot create a temporary file"; exit 2; }
+  PR=$(gh pr view --json number --jq .number 2>"$pr_err")
+  if [ -z "$PR" ]; then
+    echo "RESULT=ERROR could not resolve the current branch's PR -- pass a PR number. gh said: $(tr '\n' ' ' <"$pr_err")"
+    rm -f "$pr_err"
+    exit 2
+  fi
+  rm -f "$pr_err"
 fi
 HEAD=$(gh pr view "$PR" --repo "$REPO" --json headRefOid --jq .headRefOid 2>/dev/null) \
   || { echo "RESULT=ERROR cannot read PR #$PR in $REPO"; exit 2; }
