@@ -5,10 +5,14 @@ copilot-review-wait, codex-review-wait, byte-identical to upstream
 ``skills/``) into every QwenPaw workspace and registers ``/lorenzini``.
 
 The slash command never polls anything itself. It composes a prompt telling
-the host agent which skill covers the repository and to run that skill's
-poller, which keeps lorenzini a prompt package rather than a tool package.
-Routing is stated as a step for the agent to perform, not guessed here: the
-star count decides, and this command has no way to read it.
+the host agent which skill to read and to run that skill's poller, which keeps
+lorenzini a prompt package rather than a tool package.
+
+There is nothing left to route. CodeRabbit covers every repository as of
+2026-09-25, so the command names it and says the other two skills are dormant.
+The earlier version told the agent to look up a star count and choose; that
+would now send a repository under ten stars to a gate that reviews nothing,
+which is the fail-open this package exists to prevent.
 """
 from __future__ import annotations
 
@@ -139,21 +143,6 @@ async def _slash_lorenzini(ctx, args: str):
             f"skills/{SKILLS[reviewer]}/SKILL.md."
         )
     else:
-        # The lookup has to name the repository the command was given. Leaving
-        # the literal OWNER/NAME here while repo_line above says `acme/app`
-        # hands the agent a request that 404s -- and an agent reading that as
-        # "cannot determine the star count" picks a reviewer by guessing,
-        # which is the one thing this package exists to prevent.
-        #
-        # The two branches differ in sentence shape, not only in the value
-        # substituted. Interpolating "OWNER/NAME, resolved from the working
-        # directory" into the command position produced
-        # `gh api repos/OWNER/NAME, resolved from the working directory -q ...`
-        # -- prose inside a command the agent is told to run. Whatever sits
-        # between the backticks has to be executable in both branches, so the
-        # resolution step is a separate instruction when there is one.
-        if repo:
-            lookup = f"run `gh api repos/{repo} -q .stargazers_count`"
         # The star count used to decide this, and does not any more. Copilot
         # answered "the user who requested the review has reached their quota
         # limit" and reviewed nothing; that quota is per requesting user, not
