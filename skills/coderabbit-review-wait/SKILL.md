@@ -5,7 +5,7 @@ description: "Wait for CodeRabbit (coderabbitai[bot]) on a pull request, then cl
 
 # Wait for CodeRabbit review
 
-CodeRabbit (`coderabbitai[bot]`) reviews a PR automatically when it is opened and updates its review on every push. This skill polls until a review lands on the current head commit and classifies it.
+CodeRabbit (`coderabbitai[bot]`) reviews a pull request when it is opened and updates that review on every push. This skill polls until a review lands on the current head commit and classifies it. **Whether that happens without a manual trigger is not settled here** — see the paragraph below on how a review is triggered — so post `@coderabbitai review` rather than opening a PR and waiting. Polling an automatic run that never starts produces a `TIMEOUT` that means "nothing was requested", not "the review is slow".
 
 ## Which repositories this covers
 

@@ -90,9 +90,22 @@ for name, digits in (("fullwidth", "\uff11\uff12"),
        "is not a pull request number" in run(digits)[0])
 
 # --repo is interpolated into a command the agent is told to run.
-for bad in ("a", "a/b/c", "a/`id`"):
-    ok(f"malformed repo never reaches a prompt: {bad}",
-       "stargazers_count" not in run(f"12 --repo {bad}")[0])
+# This check used to be "stargazers_count" not in the prompt, which was true
+# while a valid --repo produced a star-count command. Routing changed and no
+# prompt carries that string any more, so the assertion became true of every
+# input and would have passed with a malformed repository composed straight
+# into an agent prompt. A guard that can no longer fail is not a guard.
+#
+# The rejection is now asserted by what a rejection IS: addressed to the
+# person rather than handed to the agent, naming the flag, and with the bad
+# value nowhere in the output.
+for bad in ("a", "a/b/c", "a/`id`", "$(id)/x"):
+    body, who = run(f"12 --repo {bad}")
+    ok(f"malformed repo is refused: {bad}", who == "assistant")
+    ok(f"malformed repo says which flag: {bad}",
+       "is not an OWNER/NAME repository" in body)
+    ok(f"malformed repo is not echoed into a prompt: {bad}",
+       "skills/coderabbit-review-wait/SKILL.md" not in body)
 
 # -- the composed prompt ------------------------------------------------
 text, role = run("12 --repo acme/app")
