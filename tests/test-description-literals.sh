@@ -36,18 +36,27 @@ for skill in sorted(root.glob("skills/*/SKILL.md")):
     scripts = "".join(p.read_text(encoding="utf-8")
                       for p in (skill.parent / "scripts").glob("poll-*.sh"))
 
-    # Single-quoted runs long enough to be a quoted artefact rather than prose.
+    # Compared whole. The first version split each literal on its colon and
+    # compared only the left side, assuming a placeholder like
+    # 'Files reviewed: N/N' appears in no source. That was never measured and
+    # is false -- every literal matches verbatim, placeholders included. The
+    # loosening bought nothing and cost the value: 'Comments generated: 0'
+    # compared as 'Comments generated' would have accepted a description
+    # saying 1, the opposite of a clean pass.
     #
-    # Compared whole. The first version of this check split each literal on its
-    # colon and compared only the left side, on the assumption that a
-    # placeholder like 'Files reviewed: N/N' would appear nowhere in the
-    # sources. That assumption was never measured, and it is false -- all seven
-    # literals match verbatim, placeholders included. The loosening bought
-    # nothing and cost the value: 'Comments generated: 0' compared as
-    # 'Comments generated' would have accepted a description saying 1, which is
-    # the opposite of a clean pass. Found by review, on the commit that added
-    # the check.
-    for lit in re.findall(r"'([^']{6,80})'", desc):
+    # An apostrophe is not a quote. `'([^']{6,80})'` pairs the apostrophe in
+    # "Copilot's" with the next real quote, which silently shifts every pair
+    # after it: the literal that should be checked stops being checked, and a
+    # fabricated one appears that can only fail. Today that does not happen
+    # only because the span from "Copilot's" to the next quote exceeds the
+    # 80-character ceiling -- luck, not design, and it breaks the moment
+    # someone shortens that sentence.
+    #
+    # So an apostrophe is excluded structurally: a quote opens a literal only
+    # when it does not directly follow a word character.
+    lits = re.findall(r"(?<![A-Za-z0-9])'([^']{6,80})'", desc)
+    print(f"  {skill.parent.name}: {len(lits)} literal(s)")
+    for lit in lits:
         checked += 1
         if lit in scripts or lit in body:
             continue

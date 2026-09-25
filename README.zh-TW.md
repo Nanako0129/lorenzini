@@ -163,7 +163,7 @@ git fetch --tags && git checkout v0.2.3
 
 所有變更皆走 PR。然而這純粹是團隊紀律，沒有任何機制強制：`main` 沒有 branch protection，也沒有 required review。這裡的 PR 能以任何裁決甚至毫無裁決直接合併。閘門是一項決定而非硬性防護，與這套工具所審查的每個儲存庫完全相同。
 
-本專案目前累積 13 顆星，已越過 CodeRabbit 的開源方案門檻，由 CodeRabbit 執行審查並透過 `coderabbit-review-wait` 讀取裁決。未滿 10 顆星時建立的 `copilot-auto-review` ruleset 依然存在，狀態為 disabled；Copilot 過去仍曾審查過這裡的 PR，這也就是前面提到的 `OTHERBOT` 狀況，而且最初正是在本專案被發現。
+本專案由 CodeRabbit 執行審查、透過 `coderabbit-review-wait` 讀取裁決——自 2026-09-25 起每個 repo 都是。這一行先前把原因寫成「累積 13 顆星、越過開源方案門檻」；星數是否決定任何事目前未定，而且它對這件事什麼都沒決定：整張分流表是因為 Copilot 的 per-user 配額清空它那一側才搬的。當年未滿 10 顆星時建立的 `copilot-auto-review` ruleset 依然存在，狀態為 disabled；Copilot 過去仍曾審查過這裡的 PR，這也就是前面提到的 `OTHERBOT` 狀況，而且最初正是在本專案被發現。
 
 草稿 PR 會被當場拒絕：腳本立刻退出並回報 `RESULT=ERROR` 指明草稿狀態，避免讓人把草稿的沉默誤讀成審查延遲。只有得到 `RESULT=CLEAN` 才能合併；其餘任何結果，必須先處置印出來的內容。
 
@@ -209,11 +209,15 @@ python3 tests/run-gold-set.py 3 skills/coderabbit-review-wait/jev-questions-v4.j
 
 ## 測試變更
 
-執行測試時直接從出貨腳本載入分類 helper：
-
 ```bash
-bash tests/test-classifiers.sh
+bash tests/run-all.sh
 ```
+
+四組：分類（42）、PR 解析（42）、描述字面（7）、QwenPaw 指令（30）。
+
+**這份清單就是 runner 本身。** 這一節原本只列 `tests/test-classifiers.sh`，而它周圍陸續加了三組測試，其中兩組是為了抓特定回歸而寫、然後沒有任何人會跑到它們——那等於沒寫。新增一組測試就是在 `tests/run-all.sh` 加一行；這一節不重複列名字，所以不會跟實際內容脫節。
+
+`tests/run-gold-set.py` 刻意不在那支 runner 裡：它會呼叫付費分類器、需要金鑰，執行方式寫在下面的 Jev 章節。
 
 `tests/test-classifiers.sh` 直接 source 出貨腳本中的分類邏輯，而非在測試中複製正則表達式。這項區別已經證明了它的價值：過去曾有一條斷言在測試檔中內嵌了一份正則副本，當出貨程式放寬 pattern 時，變異測試竟然毫無反應，因為測試一直對著過期的正則亮綠燈。現在所有新增的斷言都會直接放在受測 helper 旁並直接呼叫它。
 

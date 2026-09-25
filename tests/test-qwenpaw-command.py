@@ -96,16 +96,24 @@ for name, digits in (("fullwidth", "\uff11\uff12"),
 # input and would have passed with a malformed repository composed straight
 # into an agent prompt. A guard that can no longer fail is not a guard.
 #
-# The rejection is now asserted by what a rejection IS: addressed to the
-# person rather than handed to the agent, naming the flag, and with the bad
-# value nowhere in the output.
+# The rejection is asserted by what a rejection IS: addressed to the person
+# rather than handed to the agent, and naming the flag.
+#
+# The rejection DOES echo the value back -- "'$(id)/x' is not an OWNER/NAME
+# repository". That is correct: it goes to the person who typed it, as
+# role="assistant", and telling them what was rejected is the point. An
+# earlier comment here claimed the value appears nowhere in the output, which
+# was never true and was never asserted either way.
+#
+# What must not happen is the value reaching a prompt the agent acts on, so
+# that is what the third assertion checks: role, not substring.
 for bad in ("a", "a/b/c", "a/`id`", "$(id)/x"):
     body, who = run(f"12 --repo {bad}")
     ok(f"malformed repo is refused: {bad}", who == "assistant")
     ok(f"malformed repo says which flag: {bad}",
        "is not an OWNER/NAME repository" in body)
-    ok(f"malformed repo is not echoed into a prompt: {bad}",
-       "skills/coderabbit-review-wait/SKILL.md" not in body)
+    ok(f"malformed repo reaches no agent prompt: {bad}",
+       "skills/" not in body and "Adjudicate the review verdict" not in body)
 
 # -- the composed prompt ------------------------------------------------
 text, role = run("12 --repo acme/app")
@@ -128,8 +136,18 @@ for label, body in (("no --repo", text_norepo), ("--repo acme/app", text)):
        "copilot-review-wait/SKILL.md" not in body
        and "codex-review-wait/SKILL.md" not in body)
     ok(f"{label}: emits no star-count lookup", "stargazers_count" not in body)
-    ok(f"{label}: carries no half-command span",
-       all(s.startswith("gh ") or " " not in s for s in commands(body)))
+    # Asserted as a count, not as a property of each span. `all()` over an
+    # empty list is True, so the per-span version could not fail: the prompt
+    # carries no backticks at all since the star-count command was removed,
+    # measured at 0 spans for every input. That is the same defect this
+    # branch fixed one commit earlier in the --repo guard, regrown in the
+    # check written to replace it.
+    #
+    # Pinning the count to zero makes the absence a stated fact. If a prompt
+    # ever grows a backticked span again, this goes red and someone decides
+    # whether it is executable, which is the judgement the per-span version
+    # was pretending to make.
+    ok(f"{label}: prompt carries no backticked span", len(commands(body)) == 0)
 
 # A dormant gate is still reachable deliberately, by name.
 text_cp, _ = run("12 --reviewer copilot")

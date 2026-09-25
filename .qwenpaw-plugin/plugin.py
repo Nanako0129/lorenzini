@@ -46,8 +46,12 @@ USAGE = (
 # number inside free text cannot be mistaken for command control data.
 _FLAG = re.compile(r"\s*--(repo|reviewer)\s+(\S+)\s*$")
 
-# A --repo value is interpolated into a prompt that instructs the host agent to
-# run `gh api repos/<value>`. That is a trust boundary: \S+ alone admits
+# A --repo value is placed verbatim into the prompt handed to the host agent,
+# on the `Repository:` line. It no longer reaches a shell command -- the
+# `gh api repos/<value>` lookup went with the star-count routing -- but it is
+# still a trust boundary, because a prompt is an instruction and the agent
+# composes commands from it. The guard stays for that reason, not for the
+# lookup it was originally written against. That is a trust boundary: \S+ alone admits
 # backticks, $(...) and shell metacharacters into a string the agent may paste
 # into a command. GitHub owner and repository names are drawn from this set, so
 # rejecting everything else costs nothing real and closes the seam.
@@ -138,9 +142,17 @@ async def _slash_lorenzini(ctx, args: str):
     )
 
     if reviewer:
+        # A named reviewer is honoured, including a dormant one -- someone may
+        # be deliberately moving a repository back. But say so: polling a gate
+        # that reviews nothing spends the whole timeout and reports TIMEOUT,
+        # which reads as a slow review rather than an absent reviewer.
+        dormant = "" if reviewer == "coderabbit" else (
+            f" {reviewer} has been dormant since 2026-09-25 and may review "
+            "nothing; confirm it is active before polling, or use CodeRabbit."
+        )
         pick_line = (
             f"The reviewer was given: {reviewer}. Use "
-            f"skills/{SKILLS[reviewer]}/SKILL.md."
+            f"skills/{SKILLS[reviewer]}/SKILL.md.{dormant}"
         )
     else:
         # The star count used to decide this, and does not any more. Copilot

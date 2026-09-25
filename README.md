@@ -164,7 +164,7 @@ If you cloned before 2026-09-20, your local repository reflects `main` at that m
 
 Changes land via pull requests, but nothing enforces this mechanically: `main` has no branch protection rules and requires no reviews. A pull request here can merge under any verdict or no verdict at all. The gate is an operational discipline rather than an infrastructure lock, matching the arrangement in every repository this tool reviews.
 
-With 13 stars, `lorenzini` sits above CodeRabbit's open-source threshold, so reviews run on CodeRabbit and verdicts are read by `coderabbit-review-wait`. The legacy `copilot-auto-review` ruleset created before reaching 10 stars remains in repository settings with its status set to disabled. Copilot still reviewed pull requests here, which is where the `OTHERBOT` leak was first discovered.
+Reviews here run on CodeRabbit and verdicts are read by `coderabbit-review-wait`, as on every repository since 2026-09-25. An earlier version of this line attributed that to `lorenzini` sitting above a 10-star threshold; whether the star count decides anything is unsettled, and it decided nothing about this — the whole routing table moved when Copilot's per-user quota emptied its side. The legacy `copilot-auto-review` ruleset remains in repository settings with its status set to disabled. Copilot still reviewed pull requests here, which is where the `OTHERBOT` leak was first discovered.
 
 Draft pull requests are refused immediately: the poller exits with `RESULT=ERROR` naming draft status, ensuring draft silence is never mistaken for review latency. Merge only on `RESULT=CLEAN`. For any other outcome, disposition the output first.
 
@@ -210,11 +210,15 @@ Benchmarks run across 30 labels in `tests/fixtures/`, evaluated three times per 
 
 ## Testing a change
 
-Run classification tests by sourcing production helpers:
-
 ```bash
-bash tests/test-classifiers.sh
+bash tests/run-all.sh
 ```
+
+Four suites: classification (42), PR resolution (42), description literals (7), and the QwenPaw command (30).
+
+The runner is the list. This section used to name `tests/test-classifiers.sh` and nothing else while three other suites were added around it, two of them written to catch a specific regression and then left with no path by which anyone would run them — which is the same as not having written them. Adding a suite means adding a line to `tests/run-all.sh`; this section does not repeat the names, so it cannot go stale against them.
+
+`tests/run-gold-set.py` is deliberately outside that runner: it calls a paid classifier and needs a key. Its invocation is in the Jev section below.
 
 `tests/test-classifiers.sh` sources helpers directly from production scripts rather than copying patterns into test files. This distinction proved essential when an earlier test asserted against a duplicated regex string: a mutation test that broadened the production pattern broke nothing in CI because the test verified an obsolete copy. New assertions now sit alongside production helpers and invoke them directly.
 

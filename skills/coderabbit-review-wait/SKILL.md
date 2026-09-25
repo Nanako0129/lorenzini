@@ -18,7 +18,7 @@ CodeRabbit (`coderabbitai[bot]`) reviews a pull request when it is opened and up
 
 Copilot answered *"Copilot was unable to review this pull request because the user who requested the review has reached their quota limit"* and reviewed nothing. That quota is **per requesting user, not per repository**, so every repository on its side went at once and no setting moved any of them. NyanCogs crossed on 2026-09-21; the remaining four on 2026-09-25. Each moved repository needs `reviews.auto_review.enabled: true` in its `.coderabbit.yaml` and its `copilot-auto-review` ruleset set to `enforcement=disabled` — disabled rather than deleted, so coming back is one field.
 
-**Do not set `reviews.auto_review.enabled: false` anywhere.** That instruction existed to stop two reviewers running at once. There is only one now, and following it disables the only review the repository gets.
+**Do not set `reviews.auto_review.enabled: false` on a repository CodeRabbit is reviewing.** That instruction existed to stop two reviewers running at once. There is only one now, and following it disables the only review the repository gets. The single exception is deliberately moving a repository back to Copilot, where it belongs alongside setting that ruleset to `enforcement=active` — `copilot-review-wait` documents the pair, and neither half is correct alone.
 
 **How a review is triggered here is a separate and unsettled question.** Automatic review was observed on repositories at 0 to 5 stars on 2026-09-25 — but every observation was taken inside a paid Advanced trial that runs to 2026-10-02, and a paid plan reviews automatically whatever the star count, so nothing observed separates the two explanations. CodeRabbit's OSS page says *"every public repository gets CodeRabbit Review free the moment you install it"* with no star threshold, which points one way but is a marketing page rather than a measurement. **Post a top-level `@coderabbitai review` rather than relying on automatic review, until a pull request after 2026-10-02 settles it.**
 
@@ -57,7 +57,7 @@ Here it is **off**, and `@coderabbitai configuration` on Syrtis-Windows#112 show
 
 | | Codex (dormant) | Copilot (dormant) | CodeRabbit (active, every repository) |
 |---|---|---|---|
-| Clean pass | `+1` reaction | review of head with zero inline comments | a **positive completion marker** at head (`APPROVED`, a verdict phrase, or a collapsed findings section) **and** no inline findings, no `CHANGES_REQUESTED` and no collapsed section (with `request_changes_workflow: true` that review is an **`APPROVED`** one), and nothing undispositioned from a second reviewer (see `RESULT=OTHERBOT`) |
+| Clean pass | `+1` reaction | review of head with zero inline comments | a **positive completion marker** at head (`APPROVED`, or a verdict phrase such as `No actionable comments were generated` / `Actionable comments posted: N`) **and** no inline findings, no `CHANGES_REQUESTED` and no collapsed section (with `request_changes_workflow: true` that review is an **`APPROVED`** one), and nothing undispositioned from a second reviewer (see `RESULT=OTHERBOT`) |
 | Findings | inline comments | inline comments | `CHANGES_REQUESTED`, or inline findings at head |
 | Re-trigger | push only | push (ruleset) or REST request | push, or comment **`@coderabbitai review`** — a comment genuinely works here, unlike Copilot |
 
