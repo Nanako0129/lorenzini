@@ -52,21 +52,17 @@ def run(args):
     return msg["content"][0]["text"], msg["role"]
 
 
-# The star-count command is what an agent pastes into a shell, so it is
-# matched against its own form rather than scanned for bad substrings. The
-# first version of this check was a blocklist and let prose through.
-SEGMENT = r"[A-Za-z0-9._-]+"
-COMMAND = re.compile(
-    rf"\Agh api repos/{SEGMENT}/{SEGMENT} -q \.stargazers_count\Z"
-)
+def commands(text):
+    """Every backticked span in the prompt.
 
-
-def only_span(text):
-    """The prompt's single backticked span, or None if it does not carry
-    exactly one. Returning None rather than skipping keeps a prompt that
-    stopped carrying a command from passing silently."""
-    spans = re.findall(r"`([^`]+)`", text)
-    return spans[0] if len(spans) == 1 else None
+    The prompt used to carry `gh api repos/<it> -q .stargazers_count`, and two
+    review rounds went into keeping that span executable: prose leaked into the
+    command position once, and the check written to catch it was a blocklist a
+    third phrasing walked straight past. The command is gone with the
+    star-count routing it served, so what remains is the rule that outlived it
+    -- nothing sits between backticks unless an agent could run it.
+    """
+    return re.findall(r"`([^`]+)`", text)
 
 
 # -- flags --------------------------------------------------------------
@@ -94,30 +90,69 @@ for name, digits in (("fullwidth", "\uff11\uff12"),
        "is not a pull request number" in run(digits)[0])
 
 # --repo is interpolated into a command the agent is told to run.
-for bad in ("a", "a/b/c", "a/`id`"):
-    ok(f"malformed repo never reaches a prompt: {bad}",
-       "stargazers_count" not in run(f"12 --repo {bad}")[0])
+# This check used to be "stargazers_count" not in the prompt, which was true
+# while a valid --repo produced a star-count command. Routing changed and no
+# prompt carries that string any more, so the assertion became true of every
+# input and would have passed with a malformed repository composed straight
+# into an agent prompt. A guard that can no longer fail is not a guard.
+#
+# The rejection is asserted by what a rejection IS: addressed to the person
+# rather than handed to the agent, and naming the flag.
+#
+# The rejection DOES echo the value back -- "'$(id)/x' is not an OWNER/NAME
+# repository". That is correct: it goes to the person who typed it, as
+# role="assistant", and telling them what was rejected is the point. An
+# earlier comment here claimed the value appears nowhere in the output, which
+# was never true and was never asserted either way.
+#
+# What must not happen is the value reaching a prompt the agent acts on, so
+# that is what the third assertion checks: role, not substring.
+for bad in ("a", "a/b/c", "a/`id`", "$(id)/x"):
+    body, who = run(f"12 --repo {bad}")
+    ok(f"malformed repo is refused: {bad}", who == "assistant")
+    ok(f"malformed repo says which flag: {bad}",
+       "is not an OWNER/NAME repository" in body)
+    ok(f"malformed repo reaches no agent prompt: {bad}",
+       "skills/" not in body and "Adjudicate the review verdict" not in body)
 
 # -- the composed prompt ------------------------------------------------
 text, role = run("12 --repo acme/app")
 ok("prompt is handed to the agent, not the person", role == "user")
-# repo_line named acme/app while pick_line queried the literal OWNER/NAME.
-ok("lookup names the supplied repo",
-   only_span(text) == "gh api repos/acme/app -q .stargazers_count")
+ok("the supplied repo reaches the prompt", "Repository: acme/app." in text)
 
 text_norepo, _ = run("12")
-ok("without --repo, resolution is its own instruction",
-   "resolve the repository's OWNER/NAME from the working directory"
-   in text_norepo)
-# Interpolating that sentence into the command position produced
-# `gh api repos/OWNER/NAME, resolved from the working directory -q ...`.
-ok("without --repo, the span is still a command",
-   COMMAND.match(only_span(text_norepo) or "") is not None)
+ok("without --repo the agent is told to detect it",
+   "detect it from the working directory" in text_norepo)
 
-text_cr, _ = run("12 --reviewer coderabbit")
-ok("an explicit reviewer skips the lookup and names its skill",
-   "stargazers_count" not in text_cr
-   and "skills/coderabbit-review-wait/SKILL.md" in text_cr)
+# Routing by star count was the defect, not the feature. Copilot's quota is per
+# requesting user, so its whole side went dormant at once and every repository
+# moved to CodeRabbit on 2026-09-25. A prompt still sending an under-ten-star
+# repository to copilot-review-wait hands the pull request to a gate that
+# reviews nothing -- fail-open, while reading as though a reviewer was picked.
+for label, body in (("no --repo", text_norepo), ("--repo acme/app", text)):
+    ok(f"{label}: defaults to CodeRabbit",
+       "skills/coderabbit-review-wait/SKILL.md" in body)
+    ok(f"{label}: does not route to a dormant gate",
+       "copilot-review-wait/SKILL.md" not in body
+       and "codex-review-wait/SKILL.md" not in body)
+    ok(f"{label}: emits no star-count lookup", "stargazers_count" not in body)
+    # Asserted as a count, not as a property of each span. `all()` over an
+    # empty list is True, so the per-span version could not fail: the prompt
+    # carries no backticks at all since the star-count command was removed,
+    # measured at 0 spans for every input. That is the same defect this
+    # branch fixed one commit earlier in the --repo guard, regrown in the
+    # check written to replace it.
+    #
+    # Pinning the count to zero makes the absence a stated fact. If a prompt
+    # ever grows a backticked span again, this goes red and someone decides
+    # whether it is executable, which is the judgement the per-span version
+    # was pretending to make.
+    ok(f"{label}: prompt carries no backticked span", len(commands(body)) == 0)
+
+# A dormant gate is still reachable deliberately, by name.
+text_cp, _ = run("12 --reviewer copilot")
+ok("an explicit reviewer is honoured even when dormant",
+   "skills/copilot-review-wait/SKILL.md" in text_cp)
 
 print(f"{checked - len(failures)} passed, {len(failures)} failed")
 for f in failures:

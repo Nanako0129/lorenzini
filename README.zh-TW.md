@@ -18,12 +18,17 @@
 
 ## 審查工具與分流
 
-三支 skill 各自對應不同的審查工具：
-- [`coderabbit-review-wait`](skills/coderabbit-review-wait/)：對應 CodeRabbit（`coderabbitai[bot]`），用於 10 顆星以上的儲存庫（包括目前 13 顆星的 `lorenzini` 本身）。
-- [`copilot-review-wait`](skills/copilot-review-wait/)：對應 GitHub Copilot（`copilot-pull-request-reviewer[bot]`），用於少於 10 顆星的儲存庫。
-- [`codex-review-wait`](skills/codex-review-wait/)：對應 Codex（`chatgpt-codex-connector`），因上游訂閱暫停，自 2026-09-17 起休眠。
+一支在跑，另外兩支休眠保留而不刪除。
 
-這項分流是廠商的方案限制，不是架構偏好。CodeRabbit 的開源方案要求少於 10 顆星的公開儲存庫必須手動觸發審查，這類儲存庫才轉向 Copilot。設定前請先用指令查詢星數，不要憑空假設：
+- [`coderabbit-review-wait`](skills/coderabbit-review-wait/)：對應 CodeRabbit（`coderabbitai[bot]`）。**自 2026-09-25 起涵蓋全部儲存庫。**
+- [`copilot-review-wait`](skills/copilot-review-wait/)：對應 GitHub Copilot（`copilot-pull-request-reviewer[bot]`）。自 2026-09-25 起休眠。
+- [`codex-review-wait`](skills/codex-review-wait/)：對應 Codex（`chatgpt-codex-connector`）。自 2026-09-17 起休眠，上游訂閱暫停。
+
+原本有一套依星數的分流。它結束於 Copilot 回了 *"Copilot was unable to review this pull request because the user who requested the review has reached their quota limit"* 而什麼都沒審。**那個配額是以請求者計算，不是以儲存庫計算**，所以它在同一刻清空了分流表的一整側，任何單一儲存庫的設定都救不回來——這正是當初建立星數分流時要繞開的那種失效形狀，只是換成另一個廠商。
+
+要把一個儲存庫搬過去，兩件事要一起做：在它的 `.coderabbit.yaml` 設 `reviews.auto_review.enabled: true`，以及把 `copilot-auto-review` ruleset 設成 `enforcement=disabled`。停用而非刪除，這樣要回頭只是改一個欄位。
+
+**星數是否仍決定審查的觸發方式，目前未定。** 0 到 5 顆星的儲存庫都觀察到自動審查，但每一次觀察都是在付費試用期內取得的，而付費方案本來就會自動審查，與星數無關。請主動貼一則 `@coderabbitai review`，不要依賴自動觸發。如果你另有用途需要星數，指令如下：
 
 ```bash
 gh api repos/OWNER/NAME -q .stargazers_count
@@ -158,7 +163,7 @@ git fetch --tags && git checkout v0.2.3
 
 所有變更皆走 PR。然而這純粹是團隊紀律，沒有任何機制強制：`main` 沒有 branch protection，也沒有 required review。這裡的 PR 能以任何裁決甚至毫無裁決直接合併。閘門是一項決定而非硬性防護，與這套工具所審查的每個儲存庫完全相同。
 
-本專案目前累積 13 顆星，已越過 CodeRabbit 的開源方案門檻，由 CodeRabbit 執行審查並透過 `coderabbit-review-wait` 讀取裁決。未滿 10 顆星時建立的 `copilot-auto-review` ruleset 依然存在，狀態為 disabled；Copilot 過去仍曾審查過這裡的 PR，這也就是前面提到的 `OTHERBOT` 狀況，而且最初正是在本專案被發現。
+本專案由 CodeRabbit 執行審查、透過 `coderabbit-review-wait` 讀取裁決——自 2026-09-25 起每個 repo 都是。這一行先前把原因寫成「累積 13 顆星、越過開源方案門檻」；星數是否決定任何事目前未定，而且它對這件事什麼都沒決定：整張分流表是因為 Copilot 的 per-user 配額清空它那一側才搬的。當年未滿 10 顆星時建立的 `copilot-auto-review` ruleset 依然存在，狀態為 disabled；Copilot 過去仍曾審查過這裡的 PR，這也就是前面提到的 `OTHERBOT` 狀況，而且最初正是在本專案被發現。
 
 草稿 PR 會被當場拒絕：腳本立刻退出並回報 `RESULT=ERROR` 指明草稿狀態，避免讓人把草稿的沉默誤讀成審查延遲。只有得到 `RESULT=CLEAN` 才能合併；其餘任何結果，必須先處置印出來的內容。
 
@@ -204,11 +209,13 @@ python3 tests/run-gold-set.py 3 skills/coderabbit-review-wait/jev-questions-v4.j
 
 ## 測試變更
 
-執行測試時直接從出貨腳本載入分類 helper：
-
 ```bash
-bash tests/test-classifiers.sh
+bash tests/run-all.sh
 ```
+
+**這份清單就是 runner 本身。** 這一節原本只列 `tests/test-classifiers.sh`，而它周圍陸續加了三組測試，其中兩組是為了抓特定回歸而寫、然後沒有任何人會跑到它們——那等於沒寫。新增一組測試就是在 `tests/run-all.sh` 加一行；這一節不重複列名字，所以不會跟實際內容脫節。
+
+`tests/run-gold-set.py` 刻意不在那支 runner 裡：它會呼叫付費分類器、需要金鑰，執行方式寫在下面的 Jev 章節。
 
 `tests/test-classifiers.sh` 直接 source 出貨腳本中的分類邏輯，而非在測試中複製正則表達式。這項區別已經證明了它的價值：過去曾有一條斷言在測試檔中內嵌了一份正則副本，當出貨程式放寬 pattern 時，變異測試竟然毫無反應，因為測試一直對著過期的正則亮綠燈。現在所有新增的斷言都會直接放在受測 helper 旁並直接呼叫它。
 

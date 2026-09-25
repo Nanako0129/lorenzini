@@ -5,10 +5,14 @@ copilot-review-wait, codex-review-wait, byte-identical to upstream
 ``skills/``) into every QwenPaw workspace and registers ``/lorenzini``.
 
 The slash command never polls anything itself. It composes a prompt telling
-the host agent which skill covers the repository and to run that skill's
-poller, which keeps lorenzini a prompt package rather than a tool package.
-Routing is stated as a step for the agent to perform, not guessed here: the
-star count decides, and this command has no way to read it.
+the host agent which skill to read and to run that skill's poller, which keeps
+lorenzini a prompt package rather than a tool package.
+
+There is nothing left to route. CodeRabbit covers every repository as of
+2026-09-25, so the command names it and says the other two skills are dormant.
+The earlier version told the agent to look up a star count and choose; that
+would now send a repository under ten stars to a gate that reviews nothing,
+which is the fail-open this package exists to prevent.
 """
 from __future__ import annotations
 
@@ -33,16 +37,21 @@ SKILLS = {
 USAGE = (
     "Usage: /lorenzini <PR number> [--repo OWNER/NAME] "
     "[--reviewer coderabbit|copilot|codex]\n"
-    "Omit --reviewer to have the star count decide: ten or more is "
-    "CodeRabbit, under ten is Copilot."
+    "Omit --reviewer for CodeRabbit, which reviews every repository as of "
+    "2026-09-25. The other two are dormant and are kept for the case where "
+    "one is deliberately brought back."
 )
 
 # Flags are read only from a trailing section, so a repository name or a
 # number inside free text cannot be mistaken for command control data.
 _FLAG = re.compile(r"\s*--(repo|reviewer)\s+(\S+)\s*$")
 
-# A --repo value is interpolated into a prompt that instructs the host agent to
-# run `gh api repos/<value>`. That is a trust boundary: \S+ alone admits
+# A --repo value is placed verbatim into the prompt handed to the host agent,
+# on the `Repository:` line. It no longer reaches a shell command -- the
+# `gh api repos/<value>` lookup went with the star-count routing -- but it is
+# still a trust boundary, because a prompt is an instruction and the agent
+# composes commands from it. The guard stays for that reason, not for the
+# lookup it was originally written against. \S+ alone admits
 # backticks, $(...) and shell metacharacters into a string the agent may paste
 # into a command. GitHub owner and repository names are drawn from this set, so
 # rejecting everything else costs nothing real and closes the seam.
@@ -115,7 +124,8 @@ async def _slash_lorenzini(ctx, args: str):
     if reviewer is not None and reviewer not in SKILLS:
         return reply(
             f"Unknown --reviewer '{reviewer}'. Valid values: "
-            f"{', '.join(SKILLS)} (or omit it and let the star count decide)."
+            f"{', '.join(SKILLS)} (or omit it for CodeRabbit, which covers every "
+            "repository; the other two are dormant)."
         )
 
     repo = flags.get("repo")
@@ -132,39 +142,33 @@ async def _slash_lorenzini(ctx, args: str):
     )
 
     if reviewer:
+        # A named reviewer is honoured, including a dormant one -- someone may
+        # be deliberately moving a repository back. But say so: polling a gate
+        # that reviews nothing spends the whole timeout and reports TIMEOUT,
+        # which reads as a slow review rather than an absent reviewer.
+        dormant = "" if reviewer == "coderabbit" else (
+            f" {reviewer} is dormant and may review nothing; confirm it is "
+            "active before polling, or use CodeRabbit."
+        )
         pick_line = (
             f"The reviewer was given: {reviewer}. Use "
-            f"skills/{SKILLS[reviewer]}/SKILL.md."
+            f"skills/{SKILLS[reviewer]}/SKILL.md.{dormant}"
         )
     else:
-        # The lookup has to name the repository the command was given. Leaving
-        # the literal OWNER/NAME here while repo_line above says `acme/app`
-        # hands the agent a request that 404s -- and an agent reading that as
-        # "cannot determine the star count" picks a reviewer by guessing,
-        # which is the one thing this package exists to prevent.
-        #
-        # The two branches differ in sentence shape, not only in the value
-        # substituted. Interpolating "OWNER/NAME, resolved from the working
-        # directory" into the command position produced
-        # `gh api repos/OWNER/NAME, resolved from the working directory -q ...`
-        # -- prose inside a command the agent is told to run. Whatever sits
-        # between the backticks has to be executable in both branches, so the
-        # resolution step is a separate instruction when there is one.
-        if repo:
-            lookup = f"run `gh api repos/{repo} -q .stargazers_count`"
-        else:
-            lookup = (
-                "resolve the repository's OWNER/NAME from the working "
-                "directory, then run `gh api repos/OWNER/NAME -q "
-                ".stargazers_count` with that value substituted"
-            )
+        # The star count used to decide this, and does not any more. Copilot
+        # answered "the user who requested the review has reached their quota
+        # limit" and reviewed nothing; that quota is per requesting user, not
+        # per repository, so every repository on its side went at once and all
+        # of them moved to CodeRabbit by 2026-09-25. Routing by star count now
+        # sends a repository under ten stars to a dormant gate, which is the
+        # fail-open this package exists to prevent -- the pull request would
+        # get no reviewer at all while the prompt reads as if it had one.
         pick_line = (
-            "No reviewer was given, so pick one by star count before doing "
-            f"anything else: {lookup}. Ten or more means CodeRabbit "
-            "(skills/coderabbit-review-wait/SKILL.md); under ten means "
-            "Copilot (skills/copilot-review-wait/SKILL.md). Do not assume "
-            "which applies -- the line is a vendor constraint and a "
-            "repository can cross it."
+            "No reviewer was given. Use CodeRabbit: "
+            "skills/coderabbit-review-wait/SKILL.md. It covers every "
+            "repository as of 2026-09-25, whatever the star count. "
+            "copilot-review-wait and codex-review-wait are dormant; do not "
+            "route to either unless the person asked for it by name."
         )
 
     prompt = (

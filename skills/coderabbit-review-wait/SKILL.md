@@ -1,20 +1,26 @@
 ---
 name: coderabbit-review-wait
-description: Wait for the CodeRabbit PR reviewer (coderabbitai[bot]) to finish reviewing a pull request, then classify the outcome as a clean pass, nitpicks-only, or suggestions (inline findings, printed for you to address). A clean pass needs an explicit positive completion marker at the head commit - an APPROVED review, or a body saying 'No actionable comments were generated' or 'Actionable comments posted: N', or a collapsed findings section - AND no inline findings, no CHANGES_REQUESTED, no collapsed findings section, no failed pre-merge checks, and nothing undispositioned from a second reviewer. Absence of findings is never a pass on its own: with no completion marker the poller keeps waiting rather than concluding. Findings belonging to a reviewer this gate does not read are OTHERBOT, not clean - a second reviewer can be triggered onto any pull request by hand whatever the star-count routing says, and its findings may sit in its review body where they create no thread. Before starting, asks the user to pick a mode - auto loop (fix, reply, resolve threads, push, and keep tracking until clean or budget) or a single wait-and-report run. Use right after opening a non-draft PR, marking one ready, or pushing to a PR branch - CodeRabbit auto-reviews on open and updates on every push, so poll without asking again. Drafts are skipped by default, so do not poll one. Optionally takes a PR number; otherwise it uses the current branch's PR and auto-detects the repo. Covers the repositories at or above ten stars only - sepia, pilotfish, coralline, TokenBar, remora-cc, Syrtis-Windows, calico-claude. The five under ten stars (tokscale-core, NyanCogs, pilotfish-grok, homebrew-tokenbar, Syrtis-Agent) are reviewed by GitHub Copilot instead; use copilot-review-wait there.
+description: "Wait for CodeRabbit (coderabbitai[bot]) on a pull request, then classify the verdict. Covers EVERY repository as of 2026-09-25 - the star-count split ended when Copilot's per-user quota emptied its whole side at once. A clean pass needs an explicit positive completion marker at the head commit (APPROVED, a body saying 'No actionable comments were generated' or 'Actionable comments posted: N', or a collapsed findings section) AND no inline findings, no CHANGES_REQUESTED, no collapsed findings section, no failed pre-merge check, and nothing undispositioned from another reviewer (RESULT=OTHERBOT). Absence of findings is never a pass: with no marker the poller keeps waiting, and a verdict listing the changed files as skipped is not a verdict. Post a top-level '@coderabbitai review' rather than relying on automatic review - whether that fires untriggered is unsettled, every observation was taken inside a paid trial ending 2026-10-02. Use after opening a non-draft PR or pushing to one; drafts are skipped."
 ---
 
 # Wait for CodeRabbit review
 
-CodeRabbit (`coderabbitai[bot]`) reviews a PR automatically when it is opened and updates its review on every push. This skill polls until a review lands on the current head commit and classifies it.
+CodeRabbit (`coderabbitai[bot]`) reviews a pull request when it is opened and updates that review on every push. This skill polls until a review lands on the current head commit and classifies it. **Whether that happens without a manual trigger is not settled here** — see the paragraph below on how a review is triggered — so post `@coderabbitai review` rather than opening a PR and waiting. Polling an automatic run that never starts produces a `TIMEOUT` that means "nothing was requested", not "the review is slow".
 
 ## Which repositories this covers
 
+**All of them, as of 2026-09-25.** The star-count split is gone and this is the only live gate.
+
 | Repositories | Reviewer | Skill |
 |---|---|---|
-| `sepia`, `pilotfish`, `coralline`, `TokenBar`, `remora-cc`, `Syrtis-Windows`, `calico-claude` — 10 stars and up | **CodeRabbit** | this one |
-| `tokscale-core`, `NyanCogs`, `pilotfish-grok`, `homebrew-tokenbar`, `Syrtis-Agent` — under 10 stars | **GitHub Copilot** | `copilot-review-wait` |
+| every repository — `sepia`, `pilotfish`, `coralline`, `TokenBar`, `remora-cc`, `Syrtis-Windows`, `calico-claude`, `tokscale-core`, `NyanCogs`, `pilotfish-grok`, `homebrew-tokenbar`, `Syrtis-Agent` | **CodeRabbit** | this one |
+| none | ~~GitHub Copilot~~ | `copilot-review-wait`, dormant |
 
-CodeRabbit's OSS tier: *"For public repositories with less than 10 stars, CodeRabbit requires reviews to be triggered manually."* Automatic review on those five ends with the Advanced trial on 2026-10-02, so they moved to Copilot on 2026-09-19 and set `reviews.auto_review.enabled: false` here. Check with `gh api repos/OWNER/NAME -q .stargazers_count` rather than assuming; a repository crossing ten stars can move back.
+Copilot answered *"Copilot was unable to review this pull request because the user who requested the review has reached their quota limit"* and reviewed nothing. That quota is **per requesting user, not per repository**, so every repository on its side went at once and no setting moved any of them. NyanCogs crossed on 2026-09-21; the remaining four on 2026-09-25. Each moved repository needs `reviews.auto_review.enabled: true` in its `.coderabbit.yaml` and its `copilot-auto-review` ruleset set to `enforcement=disabled` — disabled rather than deleted, so coming back is one field.
+
+**Do not set `reviews.auto_review.enabled: false` on a repository CodeRabbit is reviewing.** That instruction existed to stop two reviewers running at once. There is only one now, and following it disables the only review the repository gets. The single exception is deliberately moving a repository back to Copilot, where it belongs alongside setting that ruleset to `enforcement=active` — `copilot-review-wait` documents the pair, and neither half is correct alone.
+
+**How a review is triggered here is a separate and unsettled question.** Automatic review was observed on repositories at 0 to 5 stars on 2026-09-25 — but every observation was taken inside a paid Advanced trial that runs to 2026-10-02, and a paid plan reviews automatically whatever the star count, so nothing observed separates the two explanations. CodeRabbit's OSS page says *"every public repository gets CodeRabbit Review free the moment you install it"* with no star threshold, which points one way but is a marketing page rather than a measurement. **Post a top-level `@coderabbitai review` rather than relying on automatic review, until a pull request after 2026-10-02 settles it.**
 
 ## Rate limits are the constraint that bites an auto loop
 
@@ -49,9 +55,9 @@ Here it is **off**, and `@coderabbitai configuration` on Syrtis-Windows#112 show
 
 **`request_changes_workflow: true` enforces nothing on its own.** It makes CodeRabbit post `CHANGES_REQUESTED` instead of `COMMENTED`, but without branch protection requiring an approving review, GitHub still allows the merge. Check with `gh api repos/O/R/branches/<default>/protection` before treating it as a gate; on all seven main repositories here it was a visual marker and nothing more.
 
-| | Codex (dormant) | Copilot (active, under 10 stars) | CodeRabbit (active, 10 stars and up) |
+| | Codex (dormant) | Copilot (dormant) | CodeRabbit (active, every repository) |
 |---|---|---|---|
-| Clean pass | `+1` reaction | review of head with zero inline comments | a **positive completion marker** at head (`APPROVED`, a verdict phrase, or a collapsed findings section) **and** no inline findings, no `CHANGES_REQUESTED` and no collapsed section (with `request_changes_workflow: true` that review is an **`APPROVED`** one), and nothing undispositioned from a second reviewer (see `RESULT=OTHERBOT`) |
+| Clean pass | `+1` reaction | review of head with zero inline comments | a **positive completion marker** at head (`APPROVED`, a verdict phrase such as `No actionable comments were generated` / `Actionable comments posted: N`, or a collapsed findings section) **and** no inline findings, no `CHANGES_REQUESTED` and no collapsed section. The collapsed section appears on both sides on purpose and is not a contradiction: it proves the review *finished* (lorenzini#1 carried only an outside-diff finding and no verdict phrase, and without this marker the poller waited to `TIMEOUT` on a review that had already arrived), and it also means the result is `NITPICKS` rather than `CLEAN`. `poll-coderabbit.sh` treats it exactly this way (with `request_changes_workflow: true` that review is an **`APPROVED`** one), and nothing undispositioned from a second reviewer (see `RESULT=OTHERBOT`) |
 | Findings | inline comments | inline comments | `CHANGES_REQUESTED`, or inline findings at head |
 | Re-trigger | push only | push (ruleset) or REST request | push, or comment **`@coderabbitai review`** — a comment genuinely works here, unlike Copilot |
 
@@ -80,7 +86,7 @@ From the full resolved config (`@coderabbitai configuration`, Syrtis-Windows#112
 | `fail_commit_status` | `false` | This is *why* the `CodeRabbit` status check is green regardless of findings. Set it `true` if you want the check itself to go red. |
 | `base_branches` | `[]` | Empty means default branch only, which is what skips stacked PRs. |
 | `drafts` | `false` | Drafts skipped. |
-| `auto_incremental_review` | `true` | Each push reviews only the new commits; CodeRabbit will not re-review commits it has already seen. |
+| `auto_incremental_review` | `true` | Each push reviews only the new commits, and CodeRabbit will not re-review a commit it has already seen — `@coderabbitai review` declines on one, and `full review` is what reruns it. |
 | `request_changes_workflow` | `false` | No `CHANGES_REQUESTED`; every review is `COMMENTED`. |
 
 `@coderabbitai configuration` prints every key with a `# Source:` comment (`defaults`, `UI settings`, `global overrides`, repo YAML). It is the only way to know what is actually in force — a dashboard toggle that never reached the run looks identical to one that was never set.
@@ -200,7 +206,9 @@ bash <skill-dir>/scripts/poll-coderabbit.sh [PR_NUMBER] [--repo OWNER/NAME] [--t
 > It fails closed either way: the script never ran, so no verdict was produced
 > and nothing can have been passed on one.
 
-Use `run_in_background: true`. Keep the working directory in the target repo, or pass `--repo`. Omitting `PR_NUMBER` resolves the current branch's PR, and that only works from inside the target repository: `--repo` (or `GH_REPO`) names a repository the current branch says nothing about, so the two cannot be combined and passing `--repo` without a number is refused. `--request` posts `@coderabbitai review`; it is **not** needed after a push, since CodeRabbit re-reviews new commits on its own.
+Use `run_in_background: true`. Keep the working directory in the target repo, or pass `--repo`. Omitting `PR_NUMBER` resolves the current branch's PR, and that only works from inside the target repository: `--repo` (or `GH_REPO`) names a repository the current branch says nothing about, so the two cannot be combined and passing `--repo` without a number is refused. `--request` posts `@coderabbitai review`. **Use it.** The older advice here said it was not needed after a push because CodeRabbit re-reviews new commits on its own — that assumed automatic review, which is the thing this file no longer claims. Polling a run that was never requested spends the whole timeout and reports `TIMEOUT`, which reads as a slow review rather than as an absent one.
+
+Two cases `--request` does not cover, both measured on 2026-09-25. On a commit CodeRabbit has already reviewed, `@coderabbitai review` declines and reruns nothing — `@coderabbitai full review` is the one that reruns. And neither reliably clears `Files skipped from review as they are similar to previous changes`, so a verdict can arrive covering none of the files the branch changed. That is not a pass; read what the verdict says it read.
 
 | Result | Meaning | Next step |
 |---|---|---|
