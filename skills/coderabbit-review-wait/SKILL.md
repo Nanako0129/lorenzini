@@ -86,7 +86,7 @@ From the full resolved config (`@coderabbitai configuration`, Syrtis-Windows#112
 | `fail_commit_status` | `false` | This is *why* the `CodeRabbit` status check is green regardless of findings. Set it `true` if you want the check itself to go red. |
 | `base_branches` | `[]` | Empty means default branch only, which is what skips stacked PRs. |
 | `drafts` | `false` | Drafts skipped. |
-| `auto_incremental_review` | `true` | Each push reviews only the new commits; CodeRabbit will not re-review commits it has already seen. |
+| `auto_incremental_review` | `true` | Each push reviews only the new commits, and CodeRabbit will not re-review a commit it has already seen — `@coderabbitai review` declines on one, and `full review` is what reruns it. |
 | `request_changes_workflow` | `false` | No `CHANGES_REQUESTED`; every review is `COMMENTED`. |
 
 `@coderabbitai configuration` prints every key with a `# Source:` comment (`defaults`, `UI settings`, `global overrides`, repo YAML). It is the only way to know what is actually in force — a dashboard toggle that never reached the run looks identical to one that was never set.
@@ -206,7 +206,9 @@ bash <skill-dir>/scripts/poll-coderabbit.sh [PR_NUMBER] [--repo OWNER/NAME] [--t
 > It fails closed either way: the script never ran, so no verdict was produced
 > and nothing can have been passed on one.
 
-Use `run_in_background: true`. Keep the working directory in the target repo, or pass `--repo`. Omitting `PR_NUMBER` resolves the current branch's PR, and that only works from inside the target repository: `--repo` (or `GH_REPO`) names a repository the current branch says nothing about, so the two cannot be combined and passing `--repo` without a number is refused. `--request` posts `@coderabbitai review`; it is **not** needed after a push, since CodeRabbit re-reviews new commits on its own.
+Use `run_in_background: true`. Keep the working directory in the target repo, or pass `--repo`. Omitting `PR_NUMBER` resolves the current branch's PR, and that only works from inside the target repository: `--repo` (or `GH_REPO`) names a repository the current branch says nothing about, so the two cannot be combined and passing `--repo` without a number is refused. `--request` posts `@coderabbitai review`. **Use it.** The older advice here said it was not needed after a push because CodeRabbit re-reviews new commits on its own — that assumed automatic review, which is the thing this file no longer claims. Polling a run that was never requested spends the whole timeout and reports `TIMEOUT`, which reads as a slow review rather than as an absent one.
+
+Two cases `--request` does not cover, both measured on 2026-09-25. On a commit CodeRabbit has already reviewed, `@coderabbitai review` declines and reruns nothing — `@coderabbitai full review` is the one that reruns. And neither reliably clears `Files skipped from review as they are similar to previous changes`, so a verdict can arrive covering none of the files the branch changed. That is not a pass; read what the verdict says it read.
 
 | Result | Meaning | Next step |
 |---|---|---|
