@@ -52,21 +52,17 @@ def run(args):
     return msg["content"][0]["text"], msg["role"]
 
 
-# The star-count command is what an agent pastes into a shell, so it is
-# matched against its own form rather than scanned for bad substrings. The
-# first version of this check was a blocklist and let prose through.
-SEGMENT = r"[A-Za-z0-9._-]+"
-COMMAND = re.compile(
-    rf"\Agh api repos/{SEGMENT}/{SEGMENT} -q \.stargazers_count\Z"
-)
+def commands(text):
+    """Every backticked span in the prompt.
 
-
-def only_span(text):
-    """The prompt's single backticked span, or None if it does not carry
-    exactly one. Returning None rather than skipping keeps a prompt that
-    stopped carrying a command from passing silently."""
-    spans = re.findall(r"`([^`]+)`", text)
-    return spans[0] if len(spans) == 1 else None
+    The prompt used to carry `gh api repos/<it> -q .stargazers_count`, and two
+    review rounds went into keeping that span executable: prose leaked into the
+    command position once, and the check written to catch it was a blocklist a
+    third phrasing walked straight past. The command is gone with the
+    star-count routing it served, so what remains is the rule that outlived it
+    -- nothing sits between backticks unless an agent could run it.
+    """
+    return re.findall(r"`([^`]+)`", text)
 
 
 # -- flags --------------------------------------------------------------
@@ -101,23 +97,31 @@ for bad in ("a", "a/b/c", "a/`id`"):
 # -- the composed prompt ------------------------------------------------
 text, role = run("12 --repo acme/app")
 ok("prompt is handed to the agent, not the person", role == "user")
-# repo_line named acme/app while pick_line queried the literal OWNER/NAME.
-ok("lookup names the supplied repo",
-   only_span(text) == "gh api repos/acme/app -q .stargazers_count")
+ok("the supplied repo reaches the prompt", "Repository: acme/app." in text)
 
 text_norepo, _ = run("12")
-ok("without --repo, resolution is its own instruction",
-   "resolve the repository's OWNER/NAME from the working directory"
-   in text_norepo)
-# Interpolating that sentence into the command position produced
-# `gh api repos/OWNER/NAME, resolved from the working directory -q ...`.
-ok("without --repo, the span is still a command",
-   COMMAND.match(only_span(text_norepo) or "") is not None)
+ok("without --repo the agent is told to detect it",
+   "detect it from the working directory" in text_norepo)
 
-text_cr, _ = run("12 --reviewer coderabbit")
-ok("an explicit reviewer skips the lookup and names its skill",
-   "stargazers_count" not in text_cr
-   and "skills/coderabbit-review-wait/SKILL.md" in text_cr)
+# Routing by star count was the defect, not the feature. Copilot's quota is per
+# requesting user, so its whole side went dormant at once and every repository
+# moved to CodeRabbit on 2026-09-25. A prompt still sending an under-ten-star
+# repository to copilot-review-wait hands the pull request to a gate that
+# reviews nothing -- fail-open, while reading as though a reviewer was picked.
+for label, body in (("no --repo", text_norepo), ("--repo acme/app", text)):
+    ok(f"{label}: defaults to CodeRabbit",
+       "skills/coderabbit-review-wait/SKILL.md" in body)
+    ok(f"{label}: does not route to a dormant gate",
+       "copilot-review-wait/SKILL.md" not in body
+       and "codex-review-wait/SKILL.md" not in body)
+    ok(f"{label}: emits no star-count lookup", "stargazers_count" not in body)
+    ok(f"{label}: carries no half-command span",
+       all(s.startswith("gh ") or " " not in s for s in commands(body)))
+
+# A dormant gate is still reachable deliberately, by name.
+text_cp, _ = run("12 --reviewer copilot")
+ok("an explicit reviewer is honoured even when dormant",
+   "skills/copilot-review-wait/SKILL.md" in text_cp)
 
 print(f"{checked - len(failures)} passed, {len(failures)} failed")
 for f in failures:

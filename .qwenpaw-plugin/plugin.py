@@ -33,8 +33,9 @@ SKILLS = {
 USAGE = (
     "Usage: /lorenzini <PR number> [--repo OWNER/NAME] "
     "[--reviewer coderabbit|copilot|codex]\n"
-    "Omit --reviewer to have the star count decide: ten or more is "
-    "CodeRabbit, under ten is Copilot."
+    "Omit --reviewer for CodeRabbit, which reviews every repository as of "
+    "2026-09-25. The other two are dormant and are kept for the case where "
+    "one is deliberately brought back."
 )
 
 # Flags are read only from a trailing section, so a repository name or a
@@ -152,19 +153,20 @@ async def _slash_lorenzini(ctx, args: str):
         # resolution step is a separate instruction when there is one.
         if repo:
             lookup = f"run `gh api repos/{repo} -q .stargazers_count`"
-        else:
-            lookup = (
-                "resolve the repository's OWNER/NAME from the working "
-                "directory, then run `gh api repos/OWNER/NAME -q "
-                ".stargazers_count` with that value substituted"
-            )
+        # The star count used to decide this, and does not any more. Copilot
+        # answered "the user who requested the review has reached their quota
+        # limit" and reviewed nothing; that quota is per requesting user, not
+        # per repository, so every repository on its side went at once and all
+        # of them moved to CodeRabbit by 2026-09-25. Routing by star count now
+        # sends a repository under ten stars to a dormant gate, which is the
+        # fail-open this package exists to prevent -- the pull request would
+        # get no reviewer at all while the prompt reads as if it had one.
         pick_line = (
-            "No reviewer was given, so pick one by star count before doing "
-            f"anything else: {lookup}. Ten or more means CodeRabbit "
-            "(skills/coderabbit-review-wait/SKILL.md); under ten means "
-            "Copilot (skills/copilot-review-wait/SKILL.md). Do not assume "
-            "which applies -- the line is a vendor constraint and a "
-            "repository can cross it."
+            "No reviewer was given. Use CodeRabbit: "
+            "skills/coderabbit-review-wait/SKILL.md. It covers every "
+            "repository as of 2026-09-25, whatever the star count. "
+            "copilot-review-wait and codex-review-wait are dormant; do not "
+            "route to either unless the person asked for it by name."
         )
 
     prompt = (

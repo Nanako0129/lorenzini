@@ -18,12 +18,17 @@
 
 ## 審查工具與分流
 
-三支 skill 各自對應不同的審查工具：
-- [`coderabbit-review-wait`](skills/coderabbit-review-wait/)：對應 CodeRabbit（`coderabbitai[bot]`），用於 10 顆星以上的儲存庫（包括目前 13 顆星的 `lorenzini` 本身）。
-- [`copilot-review-wait`](skills/copilot-review-wait/)：對應 GitHub Copilot（`copilot-pull-request-reviewer[bot]`），用於少於 10 顆星的儲存庫。
-- [`codex-review-wait`](skills/codex-review-wait/)：對應 Codex（`chatgpt-codex-connector`），因上游訂閱暫停，自 2026-09-17 起休眠。
+一支在跑，另外兩支休眠保留而不刪除。
 
-這項分流是廠商的方案限制，不是架構偏好。CodeRabbit 的開源方案要求少於 10 顆星的公開儲存庫必須手動觸發審查，這類儲存庫才轉向 Copilot。設定前請先用指令查詢星數，不要憑空假設：
+- [`coderabbit-review-wait`](skills/coderabbit-review-wait/)：對應 CodeRabbit（`coderabbitai[bot]`）。**自 2026-09-25 起涵蓋全部儲存庫。**
+- [`copilot-review-wait`](skills/copilot-review-wait/)：對應 GitHub Copilot（`copilot-pull-request-reviewer[bot]`）。自 2026-09-25 起休眠。
+- [`codex-review-wait`](skills/codex-review-wait/)：對應 Codex（`chatgpt-codex-connector`）。自 2026-09-17 起休眠，上游訂閱暫停。
+
+原本有一套依星數的分流。它結束於 Copilot 回了 *"Copilot was unable to review this pull request because the user who requested the review has reached their quota limit"* 而什麼都沒審。**那個配額是以請求者計算，不是以儲存庫計算**，所以它在同一刻清空了分流表的一整側，任何單一儲存庫的設定都救不回來——這正是當初建立星數分流時要繞開的那種失效形狀，只是換成另一個廠商。
+
+要把一個儲存庫搬過去，兩件事要一起做：在它的 `.coderabbit.yaml` 設 `reviews.auto_review.enabled: true`，以及把 `copilot-auto-review` ruleset 設成 `enforcement=disabled`。停用而非刪除，這樣要回頭只是改一個欄位。
+
+**星數是否仍決定審查的觸發方式，目前未定。** 0 到 5 顆星的儲存庫都觀察到自動審查，但每一次觀察都是在付費試用期內取得的，而付費方案本來就會自動審查，與星數無關。請主動貼一則 `@coderabbitai review`，不要依賴自動觸發。如果你另有用途需要星數，指令如下：
 
 ```bash
 gh api repos/OWNER/NAME -q .stargazers_count

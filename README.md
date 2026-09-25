@@ -18,12 +18,17 @@ The record of every missed finding lives in [`docs/fail-open-ledger.md`](docs/fa
 
 ## Reviewer skills and routing
 
-Routing is split across three skills:
-- [`coderabbit-review-wait`](skills/coderabbit-review-wait/): CodeRabbit (`coderabbitai[bot]`), for repositories with 10 or more stars (including `lorenzini` itself at 13 stars).
-- [`copilot-review-wait`](skills/copilot-review-wait/): GitHub Copilot (`copilot-pull-request-reviewer[bot]`), for repositories under 10 stars.
-- [`codex-review-wait`](skills/codex-review-wait/): Codex (`chatgpt-codex-connector`), dormant since 2026-09-17 following an upstream subscription suspension.
+One skill is live; the other two are kept dormant rather than deleted.
 
-This division is a vendor constraint, not an architectural choice. CodeRabbit's open-source plan requires manual review triggers on public repositories with fewer than 10 stars, so those repositories route to Copilot. Query star counts with the GitHub CLI before configuring:
+- [`coderabbit-review-wait`](skills/coderabbit-review-wait/): CodeRabbit (`coderabbitai[bot]`). **Every repository, as of 2026-09-25.**
+- [`copilot-review-wait`](skills/copilot-review-wait/): GitHub Copilot (`copilot-pull-request-reviewer[bot]`). Dormant since 2026-09-25.
+- [`codex-review-wait`](skills/codex-review-wait/): Codex (`chatgpt-codex-connector`). Dormant since 2026-09-17, upstream subscription suspended.
+
+There used to be a split by star count. It ended when Copilot answered *"Copilot was unable to review this pull request because the user who requested the review has reached their quota limit"* and reviewed nothing. **That quota is per requesting user, not per repository**, so it emptied one whole side of the routing table at the same moment and no per-repository setting moved any of it — the same failure shape the star-count split was built around, arriving from the other vendor.
+
+Moving a repository across takes two changes together: `reviews.auto_review.enabled: true` in its `.coderabbit.yaml`, and its `copilot-auto-review` ruleset set to `enforcement=disabled`. Disabled rather than deleted, so coming back is one field.
+
+**Whether the star count still decides how a review is triggered is unsettled.** Automatic review was observed at 0 to 5 stars, but every observation was taken inside a paid trial that reviews automatically whatever the count. Post a top-level `@coderabbitai review` rather than relying on it. Query star counts with the GitHub CLI if you need them for something else:
 
 ```bash
 gh api repos/OWNER/NAME -q .stargazers_count
