@@ -214,8 +214,6 @@ Benchmarks run across 30 labels in `tests/fixtures/`, evaluated three times per 
 bash tests/run-all.sh
 ```
 
-Four suites: classification (42), PR resolution (42), description literals (7), and the QwenPaw command (30).
-
 The runner is the list. This section used to name `tests/test-classifiers.sh` and nothing else while three other suites were added around it, two of them written to catch a specific regression and then left with no path by which anyone would run them — which is the same as not having written them. Adding a suite means adding a line to `tests/run-all.sh`; this section does not repeat the names, so it cannot go stale against them.
 
 `tests/run-gold-set.py` is deliberately outside that runner: it calls a paid classifier and needs a key. Its invocation is in the Jev section below.

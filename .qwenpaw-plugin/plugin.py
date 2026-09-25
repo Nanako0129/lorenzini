@@ -51,7 +51,7 @@ _FLAG = re.compile(r"\s*--(repo|reviewer)\s+(\S+)\s*$")
 # `gh api repos/<value>` lookup went with the star-count routing -- but it is
 # still a trust boundary, because a prompt is an instruction and the agent
 # composes commands from it. The guard stays for that reason, not for the
-# lookup it was originally written against. That is a trust boundary: \S+ alone admits
+# lookup it was originally written against. \S+ alone admits
 # backticks, $(...) and shell metacharacters into a string the agent may paste
 # into a command. GitHub owner and repository names are drawn from this set, so
 # rejecting everything else costs nothing real and closes the seam.
@@ -147,8 +147,8 @@ async def _slash_lorenzini(ctx, args: str):
         # that reviews nothing spends the whole timeout and reports TIMEOUT,
         # which reads as a slow review rather than an absent reviewer.
         dormant = "" if reviewer == "coderabbit" else (
-            f" {reviewer} has been dormant since 2026-09-25 and may review "
-            "nothing; confirm it is active before polling, or use CodeRabbit."
+            f" {reviewer} is dormant and may review nothing; confirm it is "
+            "active before polling, or use CodeRabbit."
         )
         pick_line = (
             f"The reviewer was given: {reviewer}. Use "

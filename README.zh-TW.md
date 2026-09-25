@@ -213,8 +213,6 @@ python3 tests/run-gold-set.py 3 skills/coderabbit-review-wait/jev-questions-v4.j
 bash tests/run-all.sh
 ```
 
-四組：分類（42）、PR 解析（42）、描述字面（7）、QwenPaw 指令（30）。
-
 **這份清單就是 runner 本身。** 這一節原本只列 `tests/test-classifiers.sh`，而它周圍陸續加了三組測試，其中兩組是為了抓特定回歸而寫、然後沒有任何人會跑到它們——那等於沒寫。新增一組測試就是在 `tests/run-all.sh` 加一行；這一節不重複列名字，所以不會跟實際內容脫節。
 
 `tests/run-gold-set.py` 刻意不在那支 runner 裡：它會呼叫付費分類器、需要金鑰，執行方式寫在下面的 Jev 章節。
