@@ -116,7 +116,8 @@ async def _slash_lorenzini(ctx, args: str):
     if reviewer is not None and reviewer not in SKILLS:
         return reply(
             f"Unknown --reviewer '{reviewer}'. Valid values: "
-            f"{', '.join(SKILLS)} (or omit it and let the star count decide)."
+            f"{', '.join(SKILLS)} (or omit it for CodeRabbit, which covers every "
+            "repository; the other two are dormant)."
         )
 
     repo = flags.get("repo")
