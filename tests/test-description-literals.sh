@@ -37,12 +37,19 @@ for skill in sorted(root.glob("skills/*/SKILL.md")):
                       for p in (skill.parent / "scripts").glob("poll-*.sh"))
 
     # Single-quoted runs long enough to be a quoted artefact rather than prose.
-    # A literal spanning a colon is split on it: 'Actionable comments posted: N'
-    # carries a placeholder after the colon that no source contains.
+    #
+    # Compared whole. The first version of this check split each literal on its
+    # colon and compared only the left side, on the assumption that a
+    # placeholder like 'Files reviewed: N/N' would appear nowhere in the
+    # sources. That assumption was never measured, and it is false -- all seven
+    # literals match verbatim, placeholders included. The loosening bought
+    # nothing and cost the value: 'Comments generated: 0' compared as
+    # 'Comments generated' would have accepted a description saying 1, which is
+    # the opposite of a clean pass. Found by review, on the commit that added
+    # the check.
     for lit in re.findall(r"'([^']{6,80})'", desc):
-        core = lit.split(":")[0].strip()
         checked += 1
-        if core in scripts or core in body:
+        if lit in scripts or lit in body:
             continue
         failed += 1
         print(f"FAIL {skill.parent.name}")
