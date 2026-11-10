@@ -13,6 +13,7 @@
 #   RESULT=NITPICKS count=N       otherwise clean, but N findings -- or N files skipped from
 #                                 review -- sit in a collapsed body section
 #   RESULT=PREMERGE count=N       otherwise clean, but N pre-merge checks failed
+#   RESULT=RISK                   otherwise clean, but the summary states a Merge Risk above Minimal
 #   RESULT=SUGGESTIONS count=N    inline comments on head, or CHANGES_REQUESTED
 #   RESULT=MISCOUNT claimed=N counted=M   the reviewer's own count exceeds ours -- the gap is the finding
 #   RESULT=UNREPLIED count=N      N resolved threads carry no human reply
@@ -65,7 +66,50 @@ set -u
 # produced nothing -- a helper that cannot fail loudly, in a file about guards
 # that fail silently. Caught by a mutation run, not by a passing test.
 BOT="coderabbitai[bot]"
-HIDDEN_RE='(Nitpick comments|Outside diff range comments|Duplicate comments|Files skipped from review[^(]*) \(([0-9]+)\)'
+# Two spellings of the count. Until 2026-11 a section read "Nitpick comments
+# (1)"; the format CodeRabbit shipped in November reads "Nitpick comments: 1"
+# behind an icon (Syrtis-Windows#276, review 5810228112). The old pattern did
+# not match the new one, so a review whose findings were all nitpicks would
+# have passed as CLEAN. The bare "Nitpick comments:" heading of the
+# prompt-for-agents block carries no number and stays unmatched. Two whole
+# alternatives rather than one shared prefix, so the paren form keeps accepting
+# a colon inside the skipped-files reason, as it always did. classify_bodies
+# matches it after icon_tally has stripped the tags, so markup between the
+# colon and the number cannot hide a section.
+# Markdown emphasis around the number ("Nitpick comments: **2**") is allowed for
+# the same reason; the colon form stops at "(" so it cannot run across a
+# paren-form section on the same line and swallow its count.
+HIDDEN_RE='(Nitpick comments|Outside diff range comments|Duplicate comments|Files skipped from review[^(]*) \([*_]*([0-9]+)[*_]*\)|(Nitpick comments|Outside diff range comments|Duplicate comments|Files skipped from review[^(:]*):[*_[:space:]]*([0-9]+)'
+
+# The November 2026 format draws the pre-merge tally with icons instead of
+# emoji: "Pre-merge checks: <img ...counter-passed...> 4 · <img
+# ...counter-failed...> 1" (coralline#112). Turn the icons back into the emoji
+# the tally parser keys on and drop the remaining tags, so both formats reach
+# one parser. Without this the failed count read as absent, i.e. a pass.
+# On a "Pre-merge checks" line only an icon that says "passed" is a pass; every
+# other image there (failed, a warning, a renamed asset not seen yet) becomes
+# the failure marker, so an unknown icon withholds CLEAN instead of vanishing
+# with the tags. Elsewhere tags are simply stripped.
+icon_tally() {  # stdin: review/comment bodies -> the same text, tally icons as emoji, tags stripped
+  # Strip only the tags CodeRabbit's markup uses, never any "<...>" span: a bare
+  # "<" before a section count and a ">" after it on one line would otherwise
+  # delete the count with them (found by the verifier on "x < y and Nitpick
+  # comments (1) and z > w", which main's raw match blocked).
+  sed -E '/Pre-merge checks/{ s/<img[^>]*[Pp]assed[^>]*>/✅/g; s/<img[^>]*>/❌/g; }; s#</?(img|picture|source|sup|sub|strong|b|i|em|code|summary|details|span|dl|dd|dt|br|h[1-6]|p|blockquote|div|a)( [^>]*)?/?>##g'
+}
+
+# The November 2026 format has no verdict phrase when nothing was found. Its
+# completion marker is a machine-readable comment in the summary:
+#   <!-- final_review_risk_coverage:{"sourceCommitId":"<sha>","coveredCommitId":"<sha>","kind":"reviewed"} -->
+# Measured on coralline#112 (head 8ed61fd): the review carried no
+# "Actionable comments posted" line and no "No actionable comments were
+# generated", so the poller polled a finished review for 1200s and reported
+# TIMEOUT. Only kind "reviewed" covering this exact head counts; any other kind,
+# or a marker for an older commit, keeps the poll going.
+coverage_reviewed() {  # stdin: comment body; $1 = head sha -> 0 if head is covered as reviewed
+  sed -n 's/.*<!-- final_review_risk_coverage:\({.*}\) -->.*/\1/p' \
+    | jq -n -e --arg h "$1" '[inputs | select(.coveredCommitId == $h and .kind == "reviewed")] | length > 0' >/dev/null 2>&1
+}
 
 # A FOREIGN reviewer's body markers: the unambiguous statements that it found
 # something. Named, so the test suite drives the same pattern the gate does --
@@ -417,13 +461,13 @@ SHADOWEOF
 # bucket that withholds CLEAN (with its RESULT= line). Returns 0 when it
 # decided the verdict, 1 when nothing here blocks CLEAN.
 classify_bodies() {
-  local bodies="$1" hidden n premerge failed verdict=""
+  local bodies="$1" hidden n premerge failed risk verdict=""
   printf '%s\n' "$bodies" | grep -oE 'Actionable comments posted: [0-9]+|No actionable comments were generated' | tail -1
   # No head -N: a body with more counted sections than the cap would silently
   # drop the overflow from the total. awk sums every line it is given.
-  hidden=$(printf '%s\n' "$bodies" | grep -oE "$HIDDEN_RE")
+  hidden=$(printf '%s\n' "$bodies" | icon_tally | grep -oE "$HIDDEN_RE")
   if [ -n "$hidden" ]; then
-    n=$(printf '%s\n' "$hidden" | grep -oE '\(([0-9]+)\)$' | grep -oE '[0-9]+' | awk '{s+=$1} END {print s+0}')
+    n=$(printf '%s\n' "$hidden" | grep -oE '[0-9]+[*_]*\)?$' | grep -oE '[0-9]+' | awk '{s+=$1} END {print s+0}')
     echo
     echo "Findings or skipped files are parked in collapsed body sections. They"
     echo "are NOT inline comments and do not move the count. Disposition them"
@@ -457,8 +501,11 @@ classify_bodies() {
   # -- which a two-pipe pattern does not match, so total failure read as no
   # failures. A repository with one check configured reaches that shape the
   # first time the check fails.
-  premerge=$(printf '%s\n' "$bodies" | grep -oE 'Pre-merge checks[^<]*' | tail -1)
-  failed=$(printf '%s\n' "$premerge" | grep -oE '❌[[:space:]]*[0-9]+' | grep -oE '[0-9]+' | tail -1)
+  premerge=$(printf '%s\n' "$bodies" | icon_tally | grep -oE 'Pre-merge checks[^<]*' | tail -1)
+  # Sum every failure field: with unknown icons mapped to the marker, a tally can
+  # carry more than one, and keeping only the last let a trailing "0" cancel a
+  # real failure.
+  failed=$(printf '%s\n' "$premerge" | grep -oE '❌[[:space:]]*[0-9]+' | grep -oE '[0-9]+' | awk '{s+=$1} END {print s+0}')
   if [ -n "$premerge" ] && [ "${failed:-0}" -ge 1 ] 2>/dev/null; then
     echo
     echo "Pre-merge checks failed. These are not findings and never touch the"
@@ -476,6 +523,31 @@ classify_bodies() {
     # RESULT, which is the precedence the previous version already had.
     [ -n "$verdict" ] || verdict="PREMERGE count=$failed"
   fi
+  # The November 2026 summary states a Merge Risk level next to its completion
+  # marker. Only "Minimal" was measured (coralline#112, calico-claude#91), so
+  # every stated level is read -- the first word after the label, in any case,
+  # past any emphasis, colon or emoji -- and any level other than Minimal
+  # withholds CLEAN: a risk the reviewer names in the summary creates no inline
+  # comment to count. A body that carries the new format's coverage marker but
+  # no level this can read withholds CLEAN too, so a respelled label fails
+  # closed.
+  risk=$(printf '%s\n' "$bodies" | icon_tally | grep -ioE 'Merge Risk[^A-Za-z]*[A-Za-z]+' | grep -viE '[^a-z]minimal$')
+  if [ -z "$risk" ] && printf '%s\n' "$bodies" | grep -q 'final_review_risk_coverage' \
+     && ! printf '%s\n' "$bodies" | icon_tally | grep -iqE 'Merge Risk[^A-Za-z]*[A-Za-z]+'; then
+    risk="Merge Risk: (no level readable next to a final_review_risk_coverage marker)"
+  fi
+  case "$risk" in
+    "") ;;
+    *)
+      echo
+      echo "CodeRabbit's summary states a merge risk above Minimal:"
+      echo "------------------------------------------------------------"
+      printf '%s\n' "$risk"
+      printf '%s\n' "$bodies" | sed -n '/final_review_risk_coverage/,/final_review_risk_end/p' \
+        | grep -vE 'final_review_risk|^\s*$' | head -12
+      echo "------------------------------------------------------------"
+      [ -n "$verdict" ] || verdict="RISK" ;;
+  esac
   [ -n "$verdict" ] || return 1
   echo "RESULT=$verdict"
 }
@@ -617,6 +689,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   athead=$(printf '%s\n' "$reviews" \
     | jq --arg h "$HEAD" --arg b "$BOT" '[.[][] | select(.user.login == $b and .commit_id == $h)]' 2>/dev/null || printf '[]')
   n_at_head=$(printf '%s\n' "$athead" | jq 'length' 2>/dev/null || echo 0)
+  n_body_at_head=$(printf '%s\n' "$athead" | jq '[.[] | select((.body // "") != "")] | length' 2>/dev/null || echo 0)
   # A review object at head is NOT by itself a verdict. When a human replies in a
   # review thread, CodeRabbit answers each reply with its own review object:
   # state COMMENTED, body length 0, no verdict text, keyed to the head commit.
@@ -835,6 +908,14 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   case "$note" in
     *"No actionable comments were generated"*|*"Actionable comments posted"*) complete=1 ;;
   esac
+  # The coverage marker lives in the summary comment, which is edited apart from
+  # the review that carries the inline comments. On coralline#112 the review
+  # was submitted three seconds before the summary edit; one sample, so the
+  # order is not assumed: the marker counts only beside a review object at
+  # head that has a body (an empty one is a reply-answer, see above).
+  if [ "${n_body_at_head:-0}" -ge 1 ] && printf '%s\n' "$note" | coverage_reviewed "$HEAD"; then
+    complete=1
+  fi
   case "$note" in
     *"Currently processing"*)
       complete=0
@@ -983,7 +1064,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
       # Surface the other buckets here too, so one round shows everything the
       # caller has to disposition instead of revealing them a round at a time.
       printf '%s\n%s\n' "$(printf '%s\n' "$athead" | jq -r '.[] | .body // ""' 2>/dev/null)" "$note" \
-        | grep -oE "$HIDDEN_RE"'|Pre-merge checks[^<]*❌[^<]*' \
+        | icon_tally | grep -oE "$HIDDEN_RE"'|Pre-merge checks[^<]*❌[^<]*' \
         | sed 's/^/(also reported: /; s/$/)/'
       echo "RESULT=SUGGESTIONS count=$inline"
       exit 0

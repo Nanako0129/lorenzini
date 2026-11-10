@@ -105,6 +105,7 @@ So a verdict requires an explicit **positive completion marker**, never the abse
 |---|---|
 | `No actionable comments were generated` | Complete, clean |
 | `Actionable comments posted: N` | Complete, N findings |
+| `<!-- final_review_risk_coverage:{…"coveredCommitId":"<head>","kind":"reviewed"} -->` | Complete (November 2026 format). A clean review in that format carries **neither** phrase above, only this marker and "No actionable merge-blocking risk is established". Without it the poller waited 1200 s on finished `coralline#112` and reported `TIMEOUT`. Only kind `reviewed` for the exact head counts: a marker for an earlier commit (`calico-claude#91`, `Syrtis-Windows#276`, both pushed after their last review) keeps polling. |
 | `Currently processing new changes in this PR` | **Underway — keep polling.** Overrides everything else; CodeRabbit edits this one comment in place as the run proceeds (created 19:17:22, updated 19:40:09, one comment, not one per round). |
 | `Review skipped` | Skipped, not reviewed |
 | A review object at head that **says something** — `state: APPROVED`, or a body carrying one of the two phrases above | Complete |
@@ -135,6 +136,8 @@ A fourth collapsed section belongs in the same bucket although it holds no findi
 
 The bucket list lives in exactly one place, `HIDDEN_RE` at the top of `scripts/poll-coderabbit.sh`, and every site that needs it reads that variable. It used to be spelled out separately at two sites, which is how #115's section came to be recognised at neither.
 
+**The November 2026 format writes the count after a colon**, behind an icon: `Nitpick comments: 1` (`Syrtis-Windows#276`), not `Nitpick comments (1)`. `HIDDEN_RE` accepts both spellings; before it did, a review whose only findings were nitpicks would have passed as `CLEAN`.
+
 ### CodeRabbit has a second such bucket: pre-merge checks
 
 Found on `Nanako0129/TokenBar#330` by the `tokenbar-native-bc` session and reproduced here: completion marker present, inline findings **0**, no collapsed findings section — and in the same comment:
@@ -150,6 +153,8 @@ Pre-merge checks are not findings and never move the finding count, so they were
 A failed check is a **disposition for a human, not an automatic block**, so it withholds CLEAN rather than failing: `RESULT=PREMERGE count=N`, with the failed rows printed.
 
 **Parse the tally, never the rows.** Measured on `TokenBar#350` (reported by `tokenbar-native-b7`): the failed row's Status cell reads `⚠️ Warning` and the heading counts `(1 warning)` — the ❌ appears only in the `✅ N | ❌ M` tally and the section heading. A parser looking for ❌ inside the row finds nothing and reports a pass. CodeRabbit counts a warning as failed; match that.
+
+**The November 2026 format draws the tally with icons**: `Pre-merge checks: <img …pre-merge-checks-counter-passed…> 4 · <img …pre-merge-checks-counter-failed…> 1` (`coralline#112`). There is no ❌ to find, so the failure read as absent. `icon_tally` in the script maps the two counter icons back to ✅ / ❌ and strips the tags before the one tally parser runs.
 
 Confirmed on two PRs (`#330` Docstring Coverage, `#350` Linked Issues check). Not every failed check is about code — `#350`'s was PR/issue traceability — but the same slot can carry one that is, and a gate does not get to assume which.
 
@@ -215,6 +220,7 @@ Two cases `--request` does not cover, both measured on 2026-09-25. On a commit C
 | `RESULT=CLEAN` | A **completed** review at head — an explicit positive completion marker, never merely the absence of findings — with no inline findings, no collapsed section, no `CHANGES_REQUESTED`, and nothing undispositioned from another reviewer | Gate met. Merge. |
 | `RESULT=NITPICKS count=N` | Otherwise clean, but a collapsed body section holds N findings — or N files that were skipped from review (printed above) | **Not a pass.** Triage them, then push and re-poll. A skipped file is a coverage gap: read it yourself or re-request a review of it. |
 | `RESULT=PREMERGE count=N` | Otherwise clean, but N pre-merge checks failed (printed above). A body carrying both a collapsed section and a failed check prints both blocks and reports `NITPICKS` | **Not a pass.** Disposition each; a failed check is often a legitimate Defer. |
+| `RESULT=RISK` | Otherwise clean, but the November 2026 summary states a Merge Risk above Minimal (printed above). Only `Minimal` has been measured | **Not a pass.** Read the risk text in the summary and disposition it. |
 | `RESULT=MISCOUNT claimed=N counted=M` | CodeRabbit's body reports N actionable comments for this commit; only M were found on it | **Not a pass.** Something it posted is not being counted. The gap is the finding — and this is the one signal here that moves when the vendor changes its output format, which every regex in the script silently will not. |
 | `RESULT=UNREPLIED count=N` | N resolved threads carry no human reply, so nothing records a decision about them | **Not a pass.** Reply with the disposition, then resolve. A thread closed silently is an absence, and this gate never infers a pass from absence. |
 | `RESULT=OTHERBOT` | CodeRabbit is clean, but this PR carries undispositioned findings belonging to a reviewer this gate does not read — an unresolved thread, or a finding in that reviewer's own review body, which creates no thread at all | **Not a pass, and the distinction matters:** a clean verdict here means *CodeRabbit* found nothing, not that the PR is clean. The star-count routing does not prevent this — a second reviewer can be triggered onto any PR by hand or by the checkbox in a paused-review notice, leaving no trace this poller reads. Measured on `NyanCogs#29`: CodeRabbit auto-review disabled there, triggered anyway, 8 inline findings, three on lines Copilot's first round never touched. Open the PR, read that reviewer's output, disposition each finding. |

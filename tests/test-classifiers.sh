@@ -55,7 +55,10 @@ for spec in \
   'Duplicate comments (2)|MATCH' \
   'Files skipped from review as they are similar to previous changes (1)|MATCH' \
   'Nitpick comments|no' \
-  'Suppressed comments (2)|no'
+  'Suppressed comments (2)|no' \
+  'Nitpick comments: 1|MATCH' \
+  'Files skipped from review as they are similar to previous changes: 2|MATCH' \
+  'Nitpick comments:|no'
 do
   body=${spec%|*}; want=${spec#*|}
   got=no; printf '%s' "$body" | grep -qE "$HIDDEN_RE" && got=MATCH
@@ -90,6 +93,69 @@ Docstring Coverage | ⚠️ Warning')"
 ok "all-pass tally is not a failure" "" \
    "$(verdict 'No actionable comments were generated
 Pre-merge checks | ✅ 5')"
+
+# --- the November 2026 format (ledger entry 12) ---
+# Syrtis-Windows#276 review 5810228112, verbatim heading: the count follows a
+# colon behind an icon, and the agent-prompt block repeats "Nitpick comments:"
+# with no number, which must not add to the sum.
+ok "icon nitpick section" "RESULT=NITPICKS count=1" \
+   "$(verdict '**Actionable comments posted: 1**
+<summary><picture><source media="(prefers-color-scheme: dark)" srcset="https://storage.googleapis.com/coderabbit_public_assets/review-comment-icons-v1/brush-cleaning-dark.svg"><img src="https://storage.googleapis.com/coderabbit_public_assets/review-comment-icons-v1/brush-cleaning.svg" width="16" height="16" align="absmiddle" alt=""></picture> Nitpick comments: 1</summary><blockquote>
+Nitpick comments:
+In `@.github/release-notes/v1.4.0.md`:')"
+# coralline#112, the whole summary comment: icon tally "4 passed, 1 failed".
+fx="$ROOT/tests/fixtures/cr-2026-11-summary-coralline112.md"
+ok "icon pre-merge tally, real summary" "RESULT=PREMERGE count=1" "$(verdict "$(cat "$fx")")"
+ok "icon all-pass tally is not a failure" "" \
+   "$(verdict '<summary><strong>Pre-merge checks: <sup><picture><img src="https://storage.googleapis.com/coderabbit_public_assets/pre-merge-checks-counter-passed-14-v2.svg" width="14" height="14" align="middle" alt="Passed" title="Passed"></picture></sup> 5</strong></summary>')"
+
+# Edges that would fail open if the vendor shifts again; none is measured yet.
+# A counter icon other than "passed" is a failure, not a vanished tag.
+ok "unknown counter icon is a failure" "RESULT=PREMERGE count=1" \
+   "$(verdict 'Pre-merge checks: <img src="x/pre-merge-checks-counter-passed-14-v2.svg"> 4 · <img src="x/pre-merge-checks-counter-warning-14-v3.svg"> 1')"
+# Markup between the colon and the count cannot hide a section.
+ok "markup-wrapped nitpick count" "RESULT=NITPICKS count=2" \
+   "$(verdict '<summary>Nitpick comments: <strong>2</strong></summary>')"
+# The paren form keeps accepting a colon inside the skipped-files reason.
+ok "colon inside a skipped-files reason" "RESULT=NITPICKS count=3" \
+   "$(verdict 'Files skipped from review due to trivial changes: docs (3)')"
+# A Merge Risk above the one measured level withholds CLEAN; Minimal does not.
+ok "merge risk above minimal" "RESULT=RISK" \
+   "$(verdict '<!-- final_review_risk_label
+**Merge Risk:** **🟠 High** · up to `8ed61`
+-->')"
+ok "minimal merge risk blocks nothing" "" \
+   "$(verdict '**Merge Risk:** **⚪ Minimal** · up to `8ed61`')"
+# Round three: the next step past each of those.
+ok "a trailing zero field does not cancel a failure" "RESULT=PREMERGE count=2" \
+   "$(verdict 'Pre-merge checks: <img src="a/warn.svg" alt="Warning"> 2 · <img src="a/pre-merge-checks-counter-failed.svg"> 0')"
+ok "renamed failure icon on the tally line" "RESULT=PREMERGE count=1" \
+   "$(verdict 'Pre-merge checks: <img src="a/ok.svg" alt="Passed"> 4 · <img src="a/checks-failed-14.svg"> 1')"
+ok "emphasised nitpick count" "RESULT=NITPICKS count=2" "$(verdict 'Nitpick comments: **2**')"
+ok "paren and colon sections on one line are both counted" "RESULT=NITPICKS count=5" \
+   "$(verdict 'Files skipped from review due to trivial changes (2) and Nitpick comments: 3')"
+ok "risk label respelled" "RESULT=RISK" "$(verdict '**Merge risk**: 🟠 High')"
+ok "risk level is the word after the label" "RESULT=RISK" "$(verdict 'Merge Risk: **🟠 High** (was Minimal)')"
+ok "any non-minimal risk line blocks" "RESULT=RISK" \
+   "$(verdict 'Merge Risk: High · up to `aaaaa`
+Merge Risk: Minimal · up to `bbbbb`')"
+ok "coverage marker with no readable level blocks" "RESULT=RISK" \
+   "$(verdict '<!-- final_review_risk_coverage:{"coveredCommitId":"x","kind":"reviewed"} -->')"
+
+# Tag stripping must not eat prose between a bare "<" and ">" (verifier probe).
+ok "prose angle brackets keep the count" "RESULT=NITPICKS count=1" "$(verdict 'x < y and Nitpick comments (1) and z > w')"
+ok "an arrow keeps the count" "RESULT=NITPICKS count=1" "$(verdict 'if a<b: Nitpick comments (1) -> done')"
+
+# --- coverage_reviewed: the November format's completion marker ---
+# Keyed to the exact head and kind "reviewed"; anything else keeps polling.
+h112=8ed61fdf95da3394ba6f9bf3618ebd0fd0f3ba66
+cov() { if printf '%s\n' "$1" | coverage_reviewed "$2"; then echo yes; else echo no; fi; }
+ok "coverage marker at head"          yes "$(cov "$(cat "$fx")" "$h112")"
+ok "coverage marker for another head" no  "$(cov "$(cat "$fx")" 0000000000000000000000000000000000000000)"
+ok "coverage kind other than reviewed" no \
+   "$(cov '<!-- final_review_risk_coverage:{"sourceCommitId":"'$h112'","coveredCommitId":"'$h112'","kind":"pending"} -->' "$h112")"
+ok "no coverage marker"               no  "$(cov 'Currently processing new changes in this PR. '"$h112" "$h112")"
+ok "malformed coverage marker"        no  "$(cov '<!-- final_review_risk_coverage:{"coveredCommitId":"'$h112'", -->' "$h112")"
 
 # --- a clean body decides nothing here (the CLEAN path lives in the loop) ---
 ok "clean body blocks nothing" "" "$(verdict 'No actionable comments were generated')"
