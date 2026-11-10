@@ -109,6 +109,24 @@ ok "icon pre-merge tally, real summary" "RESULT=PREMERGE count=1" "$(verdict "$(
 ok "icon all-pass tally is not a failure" "" \
    "$(verdict '<summary><strong>Pre-merge checks: <sup><picture><img src="https://storage.googleapis.com/coderabbit_public_assets/pre-merge-checks-counter-passed-14-v2.svg" width="14" height="14" align="middle" alt="Passed" title="Passed"></picture></sup> 5</strong></summary>')"
 
+# Edges that would fail open if the vendor shifts again; none is measured yet.
+# A counter icon other than "passed" is a failure, not a vanished tag.
+ok "unknown counter icon is a failure" "RESULT=PREMERGE count=1" \
+   "$(verdict 'Pre-merge checks: <img src="x/pre-merge-checks-counter-passed-14-v2.svg"> 4 · <img src="x/pre-merge-checks-counter-warning-14-v3.svg"> 1')"
+# Markup between the colon and the count cannot hide a section.
+ok "markup-wrapped nitpick count" "RESULT=NITPICKS count=2" \
+   "$(verdict '<summary>Nitpick comments: <strong>2</strong></summary>')"
+# The paren form keeps accepting a colon inside the skipped-files reason.
+ok "colon inside a skipped-files reason" "RESULT=NITPICKS count=3" \
+   "$(verdict 'Files skipped from review due to trivial changes: docs (3)')"
+# A Merge Risk above the one measured level withholds CLEAN; Minimal does not.
+ok "merge risk above minimal" "RESULT=RISK" \
+   "$(verdict '<!-- final_review_risk_label
+**Merge Risk:** **🟠 High** · up to `8ed61`
+-->')"
+ok "minimal merge risk blocks nothing" "" \
+   "$(verdict '**Merge Risk:** **⚪ Minimal** · up to `8ed61`')"
+
 # --- coverage_reviewed: the November format's completion marker ---
 # Keyed to the exact head and kind "reviewed"; anything else keeps polling.
 h112=8ed61fdf95da3394ba6f9bf3618ebd0fd0f3ba66

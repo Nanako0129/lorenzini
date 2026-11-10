@@ -13,6 +13,7 @@
 #   RESULT=NITPICKS count=N       otherwise clean, but N findings -- or N files skipped from
 #                                 review -- sit in a collapsed body section
 #   RESULT=PREMERGE count=N       otherwise clean, but N pre-merge checks failed
+#   RESULT=RISK                   otherwise clean, but the summary states a Merge Risk above Minimal
 #   RESULT=SUGGESTIONS count=N    inline comments on head, or CHANGES_REQUESTED
 #   RESULT=MISCOUNT claimed=N counted=M   the reviewer's own count exceeds ours -- the gap is the finding
 #   RESULT=UNREPLIED count=N      N resolved threads carry no human reply
@@ -70,16 +71,23 @@ BOT="coderabbitai[bot]"
 # behind an icon (Syrtis-Windows#276, review 5810228112). The old pattern did
 # not match the new one, so a review whose findings were all nitpicks would
 # have passed as CLEAN. The bare "Nitpick comments:" heading of the
-# prompt-for-agents block carries no number and stays unmatched.
-HIDDEN_RE='(Nitpick comments|Outside diff range comments|Duplicate comments|Files skipped from review[^(:]*)( \(([0-9]+)\)|: ([0-9]+))'
+# prompt-for-agents block carries no number and stays unmatched. Two whole
+# alternatives rather than one shared prefix, so the paren form keeps accepting
+# a colon inside the skipped-files reason, as it always did. classify_bodies
+# matches it after icon_tally has stripped the tags, so markup between the
+# colon and the number cannot hide a section.
+HIDDEN_RE='(Nitpick comments|Outside diff range comments|Duplicate comments|Files skipped from review[^(]*) \(([0-9]+)\)|(Nitpick comments|Outside diff range comments|Duplicate comments|Files skipped from review[^:]*): ([0-9]+)'
 
 # The November 2026 format draws the pre-merge tally with icons instead of
 # emoji: "Pre-merge checks: <img ...counter-passed...> 4 · <img
 # ...counter-failed...> 1" (coralline#112). Turn the icons back into the emoji
 # the tally parser keys on and drop the remaining tags, so both formats reach
 # one parser. Without this the failed count read as absent, i.e. a pass.
-icon_tally() {  # stdin: review/comment bodies -> the same text with tally icons as emoji
-  sed -E 's/<img[^>]*pre-merge-checks-counter-failed[^>]*>/❌/g; s/<img[^>]*pre-merge-checks-counter-passed[^>]*>/✅/g; s/<[^>]*>//g'
+# Only "passed" is a pass: every other counter icon (failed, and any warning or
+# renamed variant not seen yet) becomes the failure marker, so an unknown icon
+# withholds CLEAN instead of vanishing with the tags.
+icon_tally() {  # stdin: review/comment bodies -> the same text with tally icons as emoji, tags stripped
+  sed -E 's/<img[^>]*pre-merge-checks-counter-passed[^>]*>/✅/g; s/<img[^>]*pre-merge-checks-counter-[^>]*>/❌/g; s/<[^>]*>//g'
 }
 
 # The November 2026 format has no verdict phrase when nothing was found. Its
@@ -445,11 +453,11 @@ SHADOWEOF
 # bucket that withholds CLEAN (with its RESULT= line). Returns 0 when it
 # decided the verdict, 1 when nothing here blocks CLEAN.
 classify_bodies() {
-  local bodies="$1" hidden n premerge failed verdict=""
+  local bodies="$1" hidden n premerge failed risk verdict=""
   printf '%s\n' "$bodies" | grep -oE 'Actionable comments posted: [0-9]+|No actionable comments were generated' | tail -1
   # No head -N: a body with more counted sections than the cap would silently
   # drop the overflow from the total. awk sums every line it is given.
-  hidden=$(printf '%s\n' "$bodies" | grep -oE "$HIDDEN_RE")
+  hidden=$(printf '%s\n' "$bodies" | icon_tally | grep -oE "$HIDDEN_RE")
   if [ -n "$hidden" ]; then
     n=$(printf '%s\n' "$hidden" | grep -oE '[0-9]+\)?$' | grep -oE '[0-9]+' | awk '{s+=$1} END {print s+0}')
     echo
@@ -504,6 +512,23 @@ classify_bodies() {
     # RESULT, which is the precedence the previous version already had.
     [ -n "$verdict" ] || verdict="PREMERGE count=$failed"
   fi
+  # The November 2026 summary states a Merge Risk level next to its completion
+  # marker. Only "Minimal" was measured (coralline#112, "No actionable
+  # merge-blocking risk is established"), so any other level withholds CLEAN:
+  # a risk the reviewer names in the summary creates no inline comment to count.
+  risk=$(printf '%s\n' "$bodies" | icon_tally | grep -oE 'Merge Risk:[*[:space:]]*[^·]*' | tail -1)
+  case "$risk" in
+    ""|*Minimal*) ;;
+    *)
+      echo
+      echo "CodeRabbit's summary states a merge risk above Minimal:"
+      echo "------------------------------------------------------------"
+      printf '%s\n' "$risk"
+      printf '%s\n' "$bodies" | sed -n '/final_review_risk_coverage/,/final_review_risk_end/p' \
+        | grep -vE 'final_review_risk|^\s*$' | head -12
+      echo "------------------------------------------------------------"
+      [ -n "$verdict" ] || verdict="RISK" ;;
+  esac
   [ -n "$verdict" ] || return 1
   echo "RESULT=$verdict"
 }
@@ -645,6 +670,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   athead=$(printf '%s\n' "$reviews" \
     | jq --arg h "$HEAD" --arg b "$BOT" '[.[][] | select(.user.login == $b and .commit_id == $h)]' 2>/dev/null || printf '[]')
   n_at_head=$(printf '%s\n' "$athead" | jq 'length' 2>/dev/null || echo 0)
+  n_body_at_head=$(printf '%s\n' "$athead" | jq '[.[] | select((.body // "") != "")] | length' 2>/dev/null || echo 0)
   # A review object at head is NOT by itself a verdict. When a human replies in a
   # review thread, CodeRabbit answers each reply with its own review object:
   # state COMMENTED, body length 0, no verdict text, keyed to the head commit.
@@ -863,7 +889,14 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   case "$note" in
     *"No actionable comments were generated"*|*"Actionable comments posted"*) complete=1 ;;
   esac
-  printf '%s\n' "$note" | coverage_reviewed "$HEAD" && complete=1
+  # The coverage marker lives in the summary comment, which is edited apart from
+  # the review that carries the inline comments. On coralline#112 the review
+  # was submitted three seconds before the summary edit; one sample, so the
+  # order is not assumed: the marker counts only beside a review object at
+  # head that has a body (an empty one is a reply-answer, see above).
+  if [ "${n_body_at_head:-0}" -ge 1 ] && printf '%s\n' "$note" | coverage_reviewed "$HEAD"; then
+    complete=1
+  fi
   case "$note" in
     *"Currently processing"*)
       complete=0

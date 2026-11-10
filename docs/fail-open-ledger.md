@@ -496,6 +496,15 @@ is kept as `tests/fixtures/cr-2026-11-summary-coralline112.md`. Replayed live:
 `Syrtis-Windows#276`, whose heads were pushed after their last review, still
 time out instead of passing on the earlier commit's marker.
 
+A review of that fix found the same shape one level down: it mapped only the
+two counter icons it had seen, matched the colon count only with nothing
+between colon and number, and ignored the Merge Risk level the new summary
+states. Each fails open on a format one step from the measured one. Now any
+counter icon other than "passed" is a failure, the hidden-section scan runs
+after the tags are stripped, a Merge Risk other than Minimal is
+`RESULT=RISK`, and the coverage marker counts only beside a review object at
+head that has a body. Each edge has a negative case in the classifier tests.
+
 ---
 
 ## What the pattern is

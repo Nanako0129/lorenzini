@@ -46,6 +46,7 @@ gh api repos/OWNER/NAME -q .stargazers_count
 | `RESULT=SUGGESTIONS count=N` | head 上有 N 條 inline findings，或 `CHANGES_REQUESTED`。 | 合併前必須先處理或回覆。 |
 | `RESULT=NITPICKS count=N` | 其餘乾淨，但有 N 條 findings，或 N 個被略過未讀的檔案，收在摺疊區塊裡。 | 不算通過。沒被讀過的檔案，零計數什麼都不代表。逐條處置後再推一次、重新輪詢。 |
 | `RESULT=PREMERGE count=N` | 其餘乾淨，但 N 項 pre-merge 檢查失敗。可靠的數字是 `✅ N | ❌ M` 這行總計和區塊標題；個別列的狀態那格寫的是 `⚠️ Warning`，所以在列裡面找 `❌` 的解析器什麼都找不到，然後回報通過。 | 不算通過。常常是合理的 defer──覆蓋率門檻算的是 diff 碰到的所有函式，不是新增的那些。逐項處置。 |
+| `RESULT=RISK` | 其餘乾淨，但 CodeRabbit 的摘要（2026 年 11 月的新格式）標示的 Merge Risk 高於 Minimal。只寫在摘要裡的風險不會產生 inline comment，計數看不到它。 | 不算通過。讀摘要裡的風險說明，逐項處置。 |
 | `RESULT=MISCOUNT claimed=N counted=M` | 審查工具自己報的數字比閘門數到的多。 | 不算通過。差距本身就是 finding：它貼出來的東西有一部分沒被算到。 |
 | `RESULT=UNREPLIED count=N` | N 條已標記解決的討論串沒有人類回覆。 | 不算通過。`@coderabbitai resolve` 會一次關掉全部，留下無人說明的處置紀錄。先寫下處置理由再 resolve。 |
 | `RESULT=OTHERBOT` | 這個閘門乾淨，但 PR 上有它讀不到的 reviewer 留下未處置的 findings──可能是未解決討論串，也可能藏在那個 reviewer 自己的 review 內文裡、不產生討論串。 | 不算通過。這裡的乾淨只代表那一個 reviewer 沒找到東西。打開 PR 讀另一個工具說了什麼。 |
