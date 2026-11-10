@@ -55,7 +55,10 @@ for spec in \
   'Duplicate comments (2)|MATCH' \
   'Files skipped from review as they are similar to previous changes (1)|MATCH' \
   'Nitpick comments|no' \
-  'Suppressed comments (2)|no'
+  'Suppressed comments (2)|no' \
+  'Nitpick comments: 1|MATCH' \
+  'Files skipped from review as they are similar to previous changes: 2|MATCH' \
+  'Nitpick comments:|no'
 do
   body=${spec%|*}; want=${spec#*|}
   got=no; printf '%s' "$body" | grep -qE "$HIDDEN_RE" && got=MATCH
@@ -90,6 +93,32 @@ Docstring Coverage | ⚠️ Warning')"
 ok "all-pass tally is not a failure" "" \
    "$(verdict 'No actionable comments were generated
 Pre-merge checks | ✅ 5')"
+
+# --- the November 2026 format (ledger entry 12) ---
+# Syrtis-Windows#276 review 5810228112, verbatim heading: the count follows a
+# colon behind an icon, and the agent-prompt block repeats "Nitpick comments:"
+# with no number, which must not add to the sum.
+ok "icon nitpick section" "RESULT=NITPICKS count=1" \
+   "$(verdict '**Actionable comments posted: 1**
+<summary><picture><source media="(prefers-color-scheme: dark)" srcset="https://storage.googleapis.com/coderabbit_public_assets/review-comment-icons-v1/brush-cleaning-dark.svg"><img src="https://storage.googleapis.com/coderabbit_public_assets/review-comment-icons-v1/brush-cleaning.svg" width="16" height="16" align="absmiddle" alt=""></picture> Nitpick comments: 1</summary><blockquote>
+Nitpick comments:
+In `@.github/release-notes/v1.4.0.md`:')"
+# coralline#112, the whole summary comment: icon tally "4 passed, 1 failed".
+fx="$ROOT/tests/fixtures/cr-2026-11-summary-coralline112.md"
+ok "icon pre-merge tally, real summary" "RESULT=PREMERGE count=1" "$(verdict "$(cat "$fx")")"
+ok "icon all-pass tally is not a failure" "" \
+   "$(verdict '<summary><strong>Pre-merge checks: <sup><picture><img src="https://storage.googleapis.com/coderabbit_public_assets/pre-merge-checks-counter-passed-14-v2.svg" width="14" height="14" align="middle" alt="Passed" title="Passed"></picture></sup> 5</strong></summary>')"
+
+# --- coverage_reviewed: the November format's completion marker ---
+# Keyed to the exact head and kind "reviewed"; anything else keeps polling.
+h112=8ed61fdf95da3394ba6f9bf3618ebd0fd0f3ba66
+cov() { if printf '%s\n' "$1" | coverage_reviewed "$2"; then echo yes; else echo no; fi; }
+ok "coverage marker at head"          yes "$(cov "$(cat "$fx")" "$h112")"
+ok "coverage marker for another head" no  "$(cov "$(cat "$fx")" 0000000000000000000000000000000000000000)"
+ok "coverage kind other than reviewed" no \
+   "$(cov '<!-- final_review_risk_coverage:{"sourceCommitId":"'$h112'","coveredCommitId":"'$h112'","kind":"pending"} -->' "$h112")"
+ok "no coverage marker"               no  "$(cov 'Currently processing new changes in this PR. '"$h112" "$h112")"
+ok "malformed coverage marker"        no  "$(cov '<!-- final_review_risk_coverage:{"coveredCommitId":"'$h112'", -->' "$h112")"
 
 # --- a clean body decides nothing here (the CLEAN path lives in the loop) ---
 ok "clean body blocks nothing" "" "$(verdict 'No actionable comments were generated')"

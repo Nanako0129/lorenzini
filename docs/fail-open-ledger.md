@@ -465,6 +465,39 @@ by the person who wrote the code.
 
 ---
 
+## 12. CodeRabbit changed its format, and two of three changes failed open
+
+**2026-11-10, `Nanako0129/coralline#112`, head `8ed61fd`.** `RESULT=TIMEOUT`
+after 1200 s over a review that had finished in five minutes.
+
+CodeRabbit's November 2026 format changed three things this gate keyed on:
+
+| What | Old | New | Effect on the gate |
+|---|---|---|---|
+| Completion of a clean review | `No actionable comments were generated` | `<!-- final_review_risk_coverage:{…"coveredCommitId":"<sha>","kind":"reviewed"} -->` and no phrase | failed closed: `TIMEOUT` |
+| Pre-merge tally | `✅ 4 \| ❌ 1` | counter icons `<img …counter-failed…> 1` | failed open: failure read as absent |
+| Collapsed section count | `Nitpick comments (1)` | `Nitpick comments: 1` | failed open: section unmatched |
+
+Only the closed one was visible. It made the run wait, someone read the review
+by hand, and the two open ones were found while fixing it: replaying the fixed
+completion marker against `#112` would have reported `CLEAN` over a failed
+Docstring Coverage check. The nitpick spelling was found by surveying every
+new-format review on the account (three) rather than the one in hand.
+
+**Shape:** entry 7 again. Every pattern encodes one day's rendering, and a
+vendor change silences all of them at once. The one closed failure was the
+only alarm, and fixing just the alarm would have shipped the two silent ones.
+
+**Now:** `coverage_reviewed` accepts the coverage marker only for the exact head
+and kind `reviewed`; `HIDDEN_RE` accepts both count spellings; `icon_tally` maps
+the counter icons to the emoji the tally parser reads. The coralline#112 summary
+is kept as `tests/fixtures/cr-2026-11-summary-coralline112.md`. Replayed live:
+`#112` now reports `PREMERGE count=1`, and `calico-claude#91` and
+`Syrtis-Windows#276`, whose heads were pushed after their last review, still
+time out instead of passing on the earlier commit's marker.
+
+---
+
 ## What the pattern is
 
 Most of them are the same sentence with different nouns: **an empty set was read

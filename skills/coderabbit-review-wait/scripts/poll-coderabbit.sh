@@ -65,7 +65,35 @@ set -u
 # produced nothing -- a helper that cannot fail loudly, in a file about guards
 # that fail silently. Caught by a mutation run, not by a passing test.
 BOT="coderabbitai[bot]"
-HIDDEN_RE='(Nitpick comments|Outside diff range comments|Duplicate comments|Files skipped from review[^(]*) \(([0-9]+)\)'
+# Two spellings of the count. Until 2026-11 a section read "Nitpick comments
+# (1)"; the format CodeRabbit shipped in November reads "Nitpick comments: 1"
+# behind an icon (Syrtis-Windows#276, review 5810228112). The old pattern did
+# not match the new one, so a review whose findings were all nitpicks would
+# have passed as CLEAN. The bare "Nitpick comments:" heading of the
+# prompt-for-agents block carries no number and stays unmatched.
+HIDDEN_RE='(Nitpick comments|Outside diff range comments|Duplicate comments|Files skipped from review[^(:]*)( \(([0-9]+)\)|: ([0-9]+))'
+
+# The November 2026 format draws the pre-merge tally with icons instead of
+# emoji: "Pre-merge checks: <img ...counter-passed...> 4 · <img
+# ...counter-failed...> 1" (coralline#112). Turn the icons back into the emoji
+# the tally parser keys on and drop the remaining tags, so both formats reach
+# one parser. Without this the failed count read as absent, i.e. a pass.
+icon_tally() {  # stdin: review/comment bodies -> the same text with tally icons as emoji
+  sed -E 's/<img[^>]*pre-merge-checks-counter-failed[^>]*>/❌/g; s/<img[^>]*pre-merge-checks-counter-passed[^>]*>/✅/g; s/<[^>]*>//g'
+}
+
+# The November 2026 format has no verdict phrase when nothing was found. Its
+# completion marker is a machine-readable comment in the summary:
+#   <!-- final_review_risk_coverage:{"sourceCommitId":"<sha>","coveredCommitId":"<sha>","kind":"reviewed"} -->
+# Measured on coralline#112 (head 8ed61fd): the review carried no
+# "Actionable comments posted" line and no "No actionable comments were
+# generated", so the poller polled a finished review for 1200s and reported
+# TIMEOUT. Only kind "reviewed" covering this exact head counts; any other kind,
+# or a marker for an older commit, keeps the poll going.
+coverage_reviewed() {  # stdin: comment body; $1 = head sha -> 0 if head is covered as reviewed
+  sed -n 's/.*<!-- final_review_risk_coverage:\({.*}\) -->.*/\1/p' \
+    | jq -n -e --arg h "$1" '[inputs | select(.coveredCommitId == $h and .kind == "reviewed")] | length > 0' >/dev/null 2>&1
+}
 
 # A FOREIGN reviewer's body markers: the unambiguous statements that it found
 # something. Named, so the test suite drives the same pattern the gate does --
@@ -423,7 +451,7 @@ classify_bodies() {
   # drop the overflow from the total. awk sums every line it is given.
   hidden=$(printf '%s\n' "$bodies" | grep -oE "$HIDDEN_RE")
   if [ -n "$hidden" ]; then
-    n=$(printf '%s\n' "$hidden" | grep -oE '\(([0-9]+)\)$' | grep -oE '[0-9]+' | awk '{s+=$1} END {print s+0}')
+    n=$(printf '%s\n' "$hidden" | grep -oE '[0-9]+\)?$' | grep -oE '[0-9]+' | awk '{s+=$1} END {print s+0}')
     echo
     echo "Findings or skipped files are parked in collapsed body sections. They"
     echo "are NOT inline comments and do not move the count. Disposition them"
@@ -457,7 +485,7 @@ classify_bodies() {
   # -- which a two-pipe pattern does not match, so total failure read as no
   # failures. A repository with one check configured reaches that shape the
   # first time the check fails.
-  premerge=$(printf '%s\n' "$bodies" | grep -oE 'Pre-merge checks[^<]*' | tail -1)
+  premerge=$(printf '%s\n' "$bodies" | icon_tally | grep -oE 'Pre-merge checks[^<]*' | tail -1)
   failed=$(printf '%s\n' "$premerge" | grep -oE '❌[[:space:]]*[0-9]+' | grep -oE '[0-9]+' | tail -1)
   if [ -n "$premerge" ] && [ "${failed:-0}" -ge 1 ] 2>/dev/null; then
     echo
@@ -835,6 +863,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   case "$note" in
     *"No actionable comments were generated"*|*"Actionable comments posted"*) complete=1 ;;
   esac
+  printf '%s\n' "$note" | coverage_reviewed "$HEAD" && complete=1
   case "$note" in
     *"Currently processing"*)
       complete=0
@@ -983,7 +1012,7 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
       # Surface the other buckets here too, so one round shows everything the
       # caller has to disposition instead of revealing them a round at a time.
       printf '%s\n%s\n' "$(printf '%s\n' "$athead" | jq -r '.[] | .body // ""' 2>/dev/null)" "$note" \
-        | grep -oE "$HIDDEN_RE"'|Pre-merge checks[^<]*❌[^<]*' \
+        | icon_tally | grep -oE "$HIDDEN_RE"'|Pre-merge checks[^<]*❌[^<]*' \
         | sed 's/^/(also reported: /; s/$/)/'
       echo "RESULT=SUGGESTIONS count=$inline"
       exit 0
