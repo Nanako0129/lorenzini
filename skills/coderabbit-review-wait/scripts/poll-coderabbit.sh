@@ -91,7 +91,11 @@ HIDDEN_RE='(Nitpick comments|Outside diff range comments|Duplicate comments|File
 # the failure marker, so an unknown icon withholds CLEAN instead of vanishing
 # with the tags. Elsewhere tags are simply stripped.
 icon_tally() {  # stdin: review/comment bodies -> the same text, tally icons as emoji, tags stripped
-  sed -E '/Pre-merge checks/{ s/<img[^>]*[Pp]assed[^>]*>/✅/g; s/<img[^>]*>/❌/g; }; s/<[^>]*>//g'
+  # Strip only the tags CodeRabbit's markup uses, never any "<...>" span: a bare
+  # "<" before a section count and a ">" after it on one line would otherwise
+  # delete the count with them (found by the verifier on "x < y and Nitpick
+  # comments (1) and z > w", which main's raw match blocked).
+  sed -E '/Pre-merge checks/{ s/<img[^>]*[Pp]assed[^>]*>/✅/g; s/<img[^>]*>/❌/g; }; s#</?(img|picture|source|sup|sub|strong|b|i|em|code|summary|details|span|dl|dd|dt|br|h[1-6]|p|blockquote|div|a)( [^>]*)?/?>##g'
 }
 
 # The November 2026 format has no verdict phrase when nothing was found. Its

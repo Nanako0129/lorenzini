@@ -142,6 +142,10 @@ Merge Risk: Minimal · up to `bbbbb`')"
 ok "coverage marker with no readable level blocks" "RESULT=RISK" \
    "$(verdict '<!-- final_review_risk_coverage:{"coveredCommitId":"x","kind":"reviewed"} -->')"
 
+# Tag stripping must not eat prose between a bare "<" and ">" (verifier probe).
+ok "prose angle brackets keep the count" "RESULT=NITPICKS count=1" "$(verdict 'x < y and Nitpick comments (1) and z > w')"
+ok "an arrow keeps the count" "RESULT=NITPICKS count=1" "$(verdict 'if a<b: Nitpick comments (1) -> done')"
+
 # --- coverage_reviewed: the November format's completion marker ---
 # Keyed to the exact head and kind "reviewed"; anything else keeps polling.
 h112=8ed61fdf95da3394ba6f9bf3618ebd0fd0f3ba66
