@@ -126,6 +126,21 @@ ok "merge risk above minimal" "RESULT=RISK" \
 -->')"
 ok "minimal merge risk blocks nothing" "" \
    "$(verdict '**Merge Risk:** **⚪ Minimal** · up to `8ed61`')"
+# Round three: the next step past each of those.
+ok "a trailing zero field does not cancel a failure" "RESULT=PREMERGE count=2" \
+   "$(verdict 'Pre-merge checks: <img src="a/warn.svg" alt="Warning"> 2 · <img src="a/pre-merge-checks-counter-failed.svg"> 0')"
+ok "renamed failure icon on the tally line" "RESULT=PREMERGE count=1" \
+   "$(verdict 'Pre-merge checks: <img src="a/ok.svg" alt="Passed"> 4 · <img src="a/checks-failed-14.svg"> 1')"
+ok "emphasised nitpick count" "RESULT=NITPICKS count=2" "$(verdict 'Nitpick comments: **2**')"
+ok "paren and colon sections on one line are both counted" "RESULT=NITPICKS count=5" \
+   "$(verdict 'Files skipped from review due to trivial changes (2) and Nitpick comments: 3')"
+ok "risk label respelled" "RESULT=RISK" "$(verdict '**Merge risk**: 🟠 High')"
+ok "risk level is the word after the label" "RESULT=RISK" "$(verdict 'Merge Risk: **🟠 High** (was Minimal)')"
+ok "any non-minimal risk line blocks" "RESULT=RISK" \
+   "$(verdict 'Merge Risk: High · up to `aaaaa`
+Merge Risk: Minimal · up to `bbbbb`')"
+ok "coverage marker with no readable level blocks" "RESULT=RISK" \
+   "$(verdict '<!-- final_review_risk_coverage:{"coveredCommitId":"x","kind":"reviewed"} -->')"
 
 # --- coverage_reviewed: the November format's completion marker ---
 # Keyed to the exact head and kind "reviewed"; anything else keeps polling.

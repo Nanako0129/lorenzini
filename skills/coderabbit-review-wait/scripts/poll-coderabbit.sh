@@ -76,18 +76,22 @@ BOT="coderabbitai[bot]"
 # a colon inside the skipped-files reason, as it always did. classify_bodies
 # matches it after icon_tally has stripped the tags, so markup between the
 # colon and the number cannot hide a section.
-HIDDEN_RE='(Nitpick comments|Outside diff range comments|Duplicate comments|Files skipped from review[^(]*) \(([0-9]+)\)|(Nitpick comments|Outside diff range comments|Duplicate comments|Files skipped from review[^:]*): ([0-9]+)'
+# Markdown emphasis around the number ("Nitpick comments: **2**") is allowed for
+# the same reason; the colon form stops at "(" so it cannot run across a
+# paren-form section on the same line and swallow its count.
+HIDDEN_RE='(Nitpick comments|Outside diff range comments|Duplicate comments|Files skipped from review[^(]*) \([*_]*([0-9]+)[*_]*\)|(Nitpick comments|Outside diff range comments|Duplicate comments|Files skipped from review[^(:]*):[*_[:space:]]*([0-9]+)'
 
 # The November 2026 format draws the pre-merge tally with icons instead of
 # emoji: "Pre-merge checks: <img ...counter-passed...> 4 · <img
 # ...counter-failed...> 1" (coralline#112). Turn the icons back into the emoji
 # the tally parser keys on and drop the remaining tags, so both formats reach
 # one parser. Without this the failed count read as absent, i.e. a pass.
-# Only "passed" is a pass: every other counter icon (failed, and any warning or
-# renamed variant not seen yet) becomes the failure marker, so an unknown icon
-# withholds CLEAN instead of vanishing with the tags.
-icon_tally() {  # stdin: review/comment bodies -> the same text with tally icons as emoji, tags stripped
-  sed -E 's/<img[^>]*pre-merge-checks-counter-passed[^>]*>/✅/g; s/<img[^>]*pre-merge-checks-counter-[^>]*>/❌/g; s/<[^>]*>//g'
+# On a "Pre-merge checks" line only an icon that says "passed" is a pass; every
+# other image there (failed, a warning, a renamed asset not seen yet) becomes
+# the failure marker, so an unknown icon withholds CLEAN instead of vanishing
+# with the tags. Elsewhere tags are simply stripped.
+icon_tally() {  # stdin: review/comment bodies -> the same text, tally icons as emoji, tags stripped
+  sed -E '/Pre-merge checks/{ s/<img[^>]*[Pp]assed[^>]*>/✅/g; s/<img[^>]*>/❌/g; }; s/<[^>]*>//g'
 }
 
 # The November 2026 format has no verdict phrase when nothing was found. Its
@@ -459,7 +463,7 @@ classify_bodies() {
   # drop the overflow from the total. awk sums every line it is given.
   hidden=$(printf '%s\n' "$bodies" | icon_tally | grep -oE "$HIDDEN_RE")
   if [ -n "$hidden" ]; then
-    n=$(printf '%s\n' "$hidden" | grep -oE '[0-9]+\)?$' | grep -oE '[0-9]+' | awk '{s+=$1} END {print s+0}')
+    n=$(printf '%s\n' "$hidden" | grep -oE '[0-9]+[*_]*\)?$' | grep -oE '[0-9]+' | awk '{s+=$1} END {print s+0}')
     echo
     echo "Findings or skipped files are parked in collapsed body sections. They"
     echo "are NOT inline comments and do not move the count. Disposition them"
@@ -494,7 +498,10 @@ classify_bodies() {
   # failures. A repository with one check configured reaches that shape the
   # first time the check fails.
   premerge=$(printf '%s\n' "$bodies" | icon_tally | grep -oE 'Pre-merge checks[^<]*' | tail -1)
-  failed=$(printf '%s\n' "$premerge" | grep -oE '❌[[:space:]]*[0-9]+' | grep -oE '[0-9]+' | tail -1)
+  # Sum every failure field: with unknown icons mapped to the marker, a tally can
+  # carry more than one, and keeping only the last let a trailing "0" cancel a
+  # real failure.
+  failed=$(printf '%s\n' "$premerge" | grep -oE '❌[[:space:]]*[0-9]+' | grep -oE '[0-9]+' | awk '{s+=$1} END {print s+0}')
   if [ -n "$premerge" ] && [ "${failed:-0}" -ge 1 ] 2>/dev/null; then
     echo
     echo "Pre-merge checks failed. These are not findings and never touch the"
@@ -513,12 +520,20 @@ classify_bodies() {
     [ -n "$verdict" ] || verdict="PREMERGE count=$failed"
   fi
   # The November 2026 summary states a Merge Risk level next to its completion
-  # marker. Only "Minimal" was measured (coralline#112, "No actionable
-  # merge-blocking risk is established"), so any other level withholds CLEAN:
-  # a risk the reviewer names in the summary creates no inline comment to count.
-  risk=$(printf '%s\n' "$bodies" | icon_tally | grep -oE 'Merge Risk:[*[:space:]]*[^·]*' | tail -1)
+  # marker. Only "Minimal" was measured (coralline#112, calico-claude#91), so
+  # every stated level is read -- the first word after the label, in any case,
+  # past any emphasis, colon or emoji -- and any level other than Minimal
+  # withholds CLEAN: a risk the reviewer names in the summary creates no inline
+  # comment to count. A body that carries the new format's coverage marker but
+  # no level this can read withholds CLEAN too, so a respelled label fails
+  # closed.
+  risk=$(printf '%s\n' "$bodies" | icon_tally | grep -ioE 'Merge Risk[^A-Za-z]*[A-Za-z]+' | grep -viE '[^a-z]minimal$')
+  if [ -z "$risk" ] && printf '%s\n' "$bodies" | grep -q 'final_review_risk_coverage' \
+     && ! printf '%s\n' "$bodies" | icon_tally | grep -iqE 'Merge Risk[^A-Za-z]*[A-Za-z]+'; then
+    risk="Merge Risk: (no level readable next to a final_review_risk_coverage marker)"
+  fi
   case "$risk" in
-    ""|*Minimal*) ;;
+    "") ;;
     *)
       echo
       echo "CodeRabbit's summary states a merge risk above Minimal:"
