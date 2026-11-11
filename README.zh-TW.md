@@ -131,7 +131,7 @@ qwenpaw plugin uninstall lorenzini      # QwenPaw
 
 ```bash
 git clone https://github.com/Nanako0129/lorenzini.git ~/side-project/lorenzini
-cd ~/side-project/lorenzini && git checkout v0.2.4
+cd ~/side-project/lorenzini && git checkout v0.2.5
 for s in codex copilot coderabbit; do
   ln -sfn ~/side-project/lorenzini/skills/$s-review-wait ~/.claude/skills/$s-review-wait
 done
@@ -142,7 +142,7 @@ done
 固定在 tag，不要對齊 `main`。這些 skill 決定 PR 能否合併，而 `main` 是修補新發現 fail-open 的地方；指向 `main` 的話，隨手一次 `git pull` 就會改掉你的閘門。符號連結指的是目錄不是 commit，所以切換 tag 不會弄壞它：
 
 ```bash
-git fetch --tags && git checkout v0.2.4
+git fetch --tags && git checkout v0.2.5
 ```
 
 如果你在開發 `lorenzini` 本身，簽出的分支**就是**你當下在跑的閘門。2026-09-20 實測：同一支輪詢器在同一個 PR 上相隔幾分鐘執行，一個分支給 `RESULT=CLEAN`，另一個給 `RESULT=NOT_REVIEWED`，而那份審查內文清清楚楚寫著程式碼從未被讀過。
@@ -151,7 +151,8 @@ git fetch --tags && git checkout v0.2.4
 
 | Tag | 支援狀態 | 說明 |
 |---|---|---|
-| `v0.2.4` | 可以用 | 現行基準版本。所有 repo 都改走 CodeRabbit：skill 說明、README 與 QwenPaw 的 `/lorenzini` 指令不再把十顆星以下的 repo 分給 Copilot——它的配額按請求者計算，一用完就是所有 repo 同時失效。`copilot-review-wait` 標為休眠。輪詢器沒有變動。新增 `tests/run-all.sh`，一次跑完四組測試。 |
+| `v0.2.5` | 可以用 | 現行基準版本。看得懂 CodeRabbit 2026 年 11 月的審查格式：乾淨審查改用 coverage 標記表示完成（之前審完了還是等到 `RESULT=TIMEOUT`）、pre-merge 計數改成圖示（失敗的檢查會被當成沒有），以及 `Nitpick comments: N` 的計數寫法。新增 `RESULT=RISK`，Merge Risk 高於 Minimal 時不給 CLEAN。改用 MIT 授權。 |
+| `v0.2.4` | 已被取代 | 前一個基準版本。所有 repo 都改走 CodeRabbit：skill 說明、README 與 QwenPaw 的 `/lorenzini` 指令不再把十顆星以下的 repo 分給 Copilot——它的配額按請求者計算，一用完就是所有 repo 同時失效。`copilot-review-wait` 標為休眠。輪詢器沒有變動。新增 `tests/run-all.sh`，一次跑完四組測試。 |
 | `v0.2.3` | 已被取代 | 前一個基準版本。讓文件承諾過的「用當前分支的 PR」真的能解析——它從來不會成功，而且會對有 PR 的分支謊稱 `no PR for the current branch`。並收緊參數解析：flag 漏帶值會讓輪詢器安靜卡死，`--repo ""` 會去輪詢錯的 repo，`--timeout ""` 會在沒等任何時間的情況下回報 `RESULT=TIMEOUT`。 |
 | `v0.2.2` | 已被取代 | 前一個基準版本。三個 skill 目錄搬進 `skills/`，並加上五份套件 manifest，讓這道閘門可以用外掛安裝，不必手工接符號連結。**破壞性變更：**既有指向這份 clone 的 `~/.claude/skills/` 符號連結，升級後會懸空。 |
 | `v0.2.1` | 已被取代 | 前一個基準版本。修掉一個競態：審查正在啟動時，skip 通知會被當成終局狀態；另外把 Copilot 配額耗盡導向 CodeRabbit，而不是停在那裡。 |
